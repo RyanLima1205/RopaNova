@@ -1,0 +1,53 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Ancien format : avatars/{uid}_{timestamp}.jpg (un seul segment sous avatars/)
+     */
+    match /avatars/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn()
+        && fileName.matches('^' + request.auth.uid + '_[^/]+\\.jpg$');
+    }
+
+    /** Nouveau format : avatars/{userId}/{timestamp}.jpg */
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /covers/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn()
+        && fileName.matches('^' + request.auth.uid + '_[^/]+\\.jpg$');
+    }
+
+    match /covers/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Anciennes images produit : products/{fichier}.jpg (lecture seule pour ne pas casser le catalogue)
+     */
+    match /products/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    /** Nouveau format : products/{userId}/... — écriture réservée au vendeur */
+    match /products/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

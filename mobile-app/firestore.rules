@@ -1,0 +1,254 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // FONCTIONS UTILITAIRES
+    // ==========================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function hasRequiredProductFields() {
+      return request.resource.data.keys().hasAll(['titulo', 'precio', 'categoria', 'subcategoria', 'condicionGeneral', 'userId', 'createdAt'])
+        && request.resource.data.titulo is string
+        && request.resource.data.titulo.size() > 0
+        && request.resource.data.userId == request.auth.uid;
+    }
+    
+    /** Compteur favoris sur le doc produit (dénormalisé) */
+    function prevFavoriteCount() {
+      return resource.data.keys().hasAny(['favoriteCount'])
+        ? resource.data.favoriteCount
+        : 0;
+    }
+    
+    /** Tout utilisateur connecté peut ±1 sur favoriteCount uniquement (titres inchangés) */
+    function isFavoriteCountOnlyDelta() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favoriteCount'])
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.favoriteCount is number
+        && request.resource.data.favoriteCount >= 0
+        && (
+          request.resource.data.favoriteCount == prevFavoriteCount() + 1
+          || request.resource.data.favoriteCount == prevFavoriteCount() - 1
+        );
+    }
+    
+    function isValidUserUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt', 'email']);
+    }
+
+    /** L’utilisateur courant est participant du document conversations/{id} (pour sous-collection messages). */
+    function isConversationParticipant(conversationId) {
+      return exists(/databases/$(database)/documents/conversations/$(conversationId))
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+    }
+    
+    // ==========================================
+    // COLLECTION: USERS
+    // ==========================================
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() 
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['name', 'email', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if isOwner(userId) && isValidUserUpdate();
+      allow delete: if isOwner(userId);
+      
+      // ==========================================
+      // SOUS-COLLECTION: MÉTHODES DE PAIEMENT
+      // ==========================================
+      match /paymentMethods/{methodId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+
+      // ==========================================
+      // SOUS-COLLECTION: ADRESSES DE LIVRAISON
+      // ==========================================
+      match /addresses/{addressId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['type', 'name', 'recipient', 'phone', 'street', 'sector', 'city', 'province', 'createdAt', 'updatedAt']);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+      
+      // ==========================================
+      // SOUS-COLLECTION: WALLET
+      // ==========================================
+      match /wallet/{walletDoc} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if false;
+      }
+      
+      // ==========================================
+      // SOUS-COLLECTION: TRANSACTIONS
+      // ==========================================
+      match /transactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if false;
+      }
+      
+      // ==========================================
+      // SOUS-COLLECTION: PRÉFÉRENCES
+      // ==========================================
+      match /preferences/{prefType} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+    
+    // ==========================================
+    // COLLECTION: PRODUCTS
+    // ==========================================
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && hasRequiredProductFields();
+      allow update: if isAuthenticated()
+        && request.resource.data.userId == resource.data.userId
+        && (
+          resource.data.userId == request.auth.uid
+          || isFavoriteCountOnlyDelta()
+        );
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==========================================
+    // COLLECTION: CATEGORIES
+    // ==========================================
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // COLLECTION: FAVORITES
+    // ==========================================
+    match /favorites/{favoriteId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      /**
+       * Création : pas d'exigence sur createdAt (souvent FieldValue.serverTimestamp() :
+       * la règle hasAll(['createdAt']) échouait → permission denied sur le batch).
+       * L’ID du doc doit être `${uid}_${productId}` pour éviter l’écriture sous un autre ID.
+       */
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userId is string
+        && request.resource.data.productId is string
+        && request.resource.data.keys().hasAll(['userId', 'productId'])
+        && favoriteId == request.auth.uid + '_' + request.resource.data.productId;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==========================================
+    // COLLECTION: CONVERSATIONS
+    // ==========================================
+    match /conversations/{conversationId} {
+      /**
+       * getDoc si la conversation n’existe pas encore : utiliser exists(chemin) pour autoriser
+       * la lecture « vide » sans toucher à resource.data (évite permission denied avant setDoc).
+       * || est court-circuité : si le doc n’existe pas, on n’évalue pas participants.
+       */
+      allow read: if isAuthenticated()
+        && (
+          !exists(/databases/$(database)/documents/conversations/$(conversationId))
+          || request.auth.uid in resource.data.participants
+        );
+      allow create: if isAuthenticated() 
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2;
+      /** S1-1 : empêcher de modifier la liste des participants (exclure l’autre, usurper le fil). */
+      allow update: if isAuthenticated()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.participants == resource.data.participants;
+      allow delete: if isAuthenticated() 
+        && request.auth.uid in resource.data.participants;
+      
+      match /messages/{messageId} {
+        // G0-1 : pas de lecture pour tout utilisateur connecté — uniquement les 2 participants.
+        allow read: if isAuthenticated() && isConversationParticipant(conversationId);
+        // Pas d’exigence sur createdAt (souvent serverTimestamp() — même problème que favorites).
+        allow create: if isAuthenticated()
+          && isConversationParticipant(conversationId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.keys().hasAll(['senderId', 'type']);
+        allow update: if isAuthenticated()
+          && isConversationParticipant(conversationId)
+          && resource.data.senderId == request.auth.uid;
+        allow delete: if isAuthenticated()
+          && isConversationParticipant(conversationId)
+          && resource.data.senderId == request.auth.uid;
+      }
+    }
+    
+    // ==========================================
+    // COLLECTION: REVIEWS
+    // ==========================================
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated() 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'userId', 'sellerId', 'orderId', 'productId', 'productTitle', 'rating', 'comment', 'createdAt'
+        ])
+        && request.resource.data.rating >= 1 
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 500;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==========================================
+    // COLLECTION: ORDERS
+    // ==========================================
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() 
+        && (resource.data.buyerId == request.auth.uid 
+            || resource.data.sellerId == request.auth.uid);
+      allow create: if isAuthenticated() 
+        && request.resource.data.buyerId == request.auth.uid
+        && request.resource.data.keys().hasAll(['buyerId', 'sellerId', 'productId', 'amount', 'status', 'createdAt']);
+      allow update: if isAuthenticated() 
+        && (resource.data.buyerId == request.auth.uid 
+            || resource.data.sellerId == request.auth.uid);
+      allow delete: if isAuthenticated() && resource.data.buyerId == request.auth.uid;
+    }
+    
+    // ==========================================
+    // COLLECTION: NOTIFICATIONS
+    // ==========================================
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      /** S1-1 : pas de création « pour quelqu’un d’autre » depuis le client (spam / usurpation). Notifier un autre user → Cloud Function (Admin SDK). */
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['userId'])
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==========================================
+    // BLOQUER TOUTE AUTRE COLLECTION
+    // ==========================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
