@@ -17,8 +17,8 @@
 | G0-4 | Secrets Firebase / clés : **pas** dans le repo ; `EXPO_PUBLIC_*` ou EAS Secrets par environnement | TBD | M | [x] | `.env` gitignoré ; `app.config.js` refuse build EAS sans secrets ; `eas.json` sans valeurs ; build preview sans `.env` dans l’artefact |
 | G0-5 | 🔴 Politique confidentialité / CGU : **même marque** (RopaNova), contacts, pays, données collectées | TBD | M | [ ] | Écran légal relu + URL/contact valides |
 | G0-6 | 🔴 Profils **EAS** : `eas.json` (dev/preview/prod), versioning build, submit App Store / Play | TBD | M | [ ] | Build `production` + soumission test interne OK |
-| G0-7 | 🔴 Permissions Android/iOS : justifier chaque permission (store listing) ; retirer legacy inutiles | TBD | S | [ ] | Fiche store + `app.json` alignés |
-| G0-8 | 🔴 Supprimer ou désactiver **logs** verbeux en prod (PII, payloads Firestore) | TBD | M | [ ] | Build prod : pas de `console.log` sensibles (ou wrapper niveau log) |
+| G0-7 | Permissions Android/iOS : justifier chaque permission (store listing) ; retirer legacy inutiles | TBD | S | [x] | Fiche store + `app.json` alignés |
+| G0-8 | Supprimer ou désactiver **logs** verbeux en prod (PII, payloads Firestore) | TBD | M | [x] | Build prod : pas de `console.log` sensibles (ou wrapper niveau log) |
 
 ### G0-4 — Le jour où tu lances un **build sur Internet** (EAS)
 
@@ -76,7 +76,7 @@ Une fois ces étapes faites pour **au moins** un build preview, tu peux considé
 
 | ID | Tâche | Owner | Effort | Statut | Validation |
 |----|--------|-------|--------|--------|------------|
-| Q2-1 | CI : `lint` + `tsc` (ou équivalent) sur `mobile-app` | TBD | M | [ ] | PR bloquée si rouge |
+| Q2-1 | CI : `lint` + `tsc` (ou équivalent) sur `mobile-app` | TBD | M | [x] | PR bloquée si rouge |
 | Q2-2 | Tests unitaires **services** critiques (auth, produit, favoris) | TBD | L | [ ] | Couverture minimale définie |
 | Q2-3 | Refactor fichiers **> ~800 lignes** (ex. Profile, Sell) par modules | TBD | XL | [ ] | Plan de decoupe + 1er module extrait |
 

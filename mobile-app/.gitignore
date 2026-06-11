@@ -8,7 +8,9 @@ node_modules/
 dist/
 web-build/
 
-# Native
+# Native (G0-7 : workflow managed Expo, régénéré via `expo prebuild` / EAS Build)
+/ios
+/android
 .kotlin/
 *.orig.*
 *.jks

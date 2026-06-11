@@ -107,6 +107,12 @@ export default function CuentaPage() {
     }))
   }
 
+  // Placeholder pour la déconnexion
+  const handleLogout = () => {
+    // TODO: Ajouter la logique de déconnexion réelle ici (ex: signOut())
+    alert('Sesión cerrada');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -447,6 +453,16 @@ export default function CuentaPage() {
             </Link>
           </CardContent>
         </Card>
+        {/* Bouton de déconnexion */}
+        <div className="flex justify-center pt-4">
+          <Button
+            variant="outline"
+            className="border-red-500 text-red-600 hover:bg-red-50 hover:border-red-600 font-semibold px-6 py-3"
+            onClick={handleLogout}
+          >
+            Cerrar sesión
+          </Button>
+        </div>
       </div>
 
       {/* Bottom spacing */}
