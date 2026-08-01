@@ -1,661 +1,335 @@
 "use client"
 
-import { useState } from "react"
-import Link from "next/link"
-import {
-  ArrowLeft,
-  Shield,
-  Eye,
-  EyeOff,
-  Lock,
-  Users,
-  MessageCircle,
-  Phone,
-  Mail,
-  MapPin,
-  Clock,
-  UserCheck,
-  AlertTriangle,
-  Info,
-  Settings,
-  Globe,
-  Smartphone,
-  Camera,
-  Heart,
-  Star,
-  Activity,
-} from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, ShieldCheck, Loader2, Lightbulb } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { RequireAuth } from "@/components/require-auth"
+import { toast } from "@/hooks/use-toast"
+import { useAuth } from "@/contexts/AuthContext"
+import { db } from "@/lib/firebaseConfig"
+import { doc, getDoc, setDoc } from "firebase/firestore"
 
-// Mock privacy settings
 const initialPrivacySettings = {
-  profile: {
-    showEmail: false,
-    showPhone: false,
-    showLocation: true,
-    showLastSeen: true,
-    showOnlineStatus: true,
-    profileVisibility: "public", // public, friends, private
+  PrivacidadDelPerfil: {
+    mostrarCorreoElectronico: false,
+    mostrarTelefono: false,
+    mostrarUbicacion: true,
+    mostrarUltimaConexion: true,
+    mostrarEstadoEnLinea: true,
+    visibilidadPerfil: "publico",
   },
-  messaging: {
-    allowMessages: true,
-    allowMessagesFrom: "everyone", // everyone, verified, following
-    readReceipts: true,
-    typingIndicators: true,
-    messageRequests: true,
+  PrivacidadDeMensajes: {
+    permitirMensajes: true,
+    permitirMensajesDe: "todos",
+    confirmacionesDeLectura: true,
+    indicadoresDeEscritura: true,
+    solicitudesDeMensajes: true,
   },
-  activity: {
-    showPurchases: false,
-    showSales: true,
-    showFavorites: false,
-    showFollowing: true,
-    showReviews: true,
-    activityStatus: true,
+  PrivacidadDeActividad: {
+    mostrarCompras: false,
+    mostrarVentas: true,
+    mostrarFavoritos: false,
+    mostrarSeguidos: true,
+    mostrarResenas: true,
+    estadoDeActividad: true,
   },
-  search: {
-    searchableByEmail: false,
-    searchableByPhone: false,
-    searchableByName: true,
-    showInSuggestions: true,
-    indexProfile: true,
+  PrivacidadDeBusqueda: {
+    buscarPorTelefono: false,
+    buscarPorNombre: true,
+    sugerenciasDeUsuarios: true,
+    indexarPerfil: true,
   },
-  notifications: {
-    allowNotifications: true,
-    marketingEmails: false,
-    productUpdates: true,
-    securityAlerts: true,
-  },
-  data: {
-    dataCollection: true,
-    analytics: false,
-    personalization: true,
-    thirdPartySharing: false,
+  PrivacidadDeDatos: {
+    recopilacionDeDatos: true,
+    analisisDeUso: false,
+    personalizacion: true,
+    compartirConTerceros: false,
   },
 }
 
-export default function PrivacidadPage() {
-  const [settings, setSettings] = useState(initialPrivacySettings)
+type PrivacySettings = typeof initialPrivacySettings
+type PrivacyCategory = keyof PrivacySettings
+
+const profileVisibilityOptions = [
+  { value: "publico", label: "Público" },
+  { value: "seguidores", label: "Seguidores" },
+  { value: "privado", label: "Privado" },
+]
+
+const allowMessagesFromOptions = [
+  { value: "todos", label: "Todos" },
+  { value: "verificados", label: "Verificados" },
+  { value: "seguidos", label: "Quienes Sigo" },
+]
+
+function deepMerge(target: any, source: any) {
+  for (const key in source) {
+    if (source[key] && typeof source[key] === "object" && !Array.isArray(source[key])) {
+      target[key] = deepMerge(target[key] || {}, source[key])
+    } else {
+      target[key] = source[key]
+    }
+  }
+  return target
+}
+
+function SwitchRow({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <span className="text-sm font-bold text-gray-900">{label}</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  )
+}
+
+function SegmentedRow({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: string; label: string }[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 mb-2">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+            value === opt.value ? "bg-brand-ui text-white" : "bg-gray-100 text-gray-700"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export default function PrivacidadPageGate() {
+  return (
+    <RequireAuth>
+      <PrivacidadPage />
+    </RequireAuth>
+  )
+}
+
+function PrivacidadPage() {
+  const router = useRouter()
+  const { user, changePassword } = useAuth()
+  const [settings, setSettings] = useState<PrivacySettings>(initialPrivacySettings)
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [currentPwd, setCurrentPwd] = useState("")
+  const [newPwd, setNewPwd] = useState("")
+  const [confirmPwd, setConfirmPwd] = useState("")
+  const [changingPwd, setChangingPwd] = useState(false)
 
-  const updateSetting = (category: string, key: string, value: any) => {
-    setSettings((prev) => ({
-      ...prev,
-      [category]: {
-        ...prev[category as keyof typeof prev],
-        [key]: value,
-      },
-    }))
+  useEffect(() => {
+    const fetchPrivacySettings = async () => {
+      setIsLoading(true)
+      if (!user?.id) {
+        setIsLoading(false)
+        return
+      }
+      try {
+        const docRef = doc(db, "users", user.id)
+        const docSnap = await getDoc(docRef)
+        if (docSnap.exists() && docSnap.data().privacySettings) {
+          setSettings(deepMerge({ ...initialPrivacySettings }, docSnap.data().privacySettings))
+        } else {
+          setSettings(initialPrivacySettings)
+        }
+      } catch {
+        setSettings(initialPrivacySettings)
+      }
+      setIsLoading(false)
+    }
+    fetchPrivacySettings()
+  }, [user?.id])
+
+  const updateSetting = (category: PrivacyCategory, key: string, value: any) => {
+    setSettings((prev) => ({ ...prev, [category]: { ...prev[category], [key]: value } }))
   }
 
-  const handleSave = async () => {
+  // Mobile guarda automáticamente al salir de la pantalla (listener 'beforeRemove' de react-navigation).
+  // Web no tiene un evento equivalente de "salida de página", así que se agrega este botón visible de
+  // guardado explícito en su lugar — es el equivalente sensato, no una réplica literal de un mecanismo
+  // que no puede existir en el navegador.
+  const handleSave = useCallback(async () => {
+    if (!user?.id) return
     setIsSaving(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      await setDoc(doc(db, "users", user.id), { privacySettings: settings }, { merge: true })
+      toast({ title: "Configuración de Privacidad Guardada con Éxito." })
+    } catch {
+      toast({ title: "Error al Guardar la Configuración de Privacidad.", variant: "destructive" })
+    }
     setIsSaving(false)
+  }, [settings, user])
+
+  const handleChangePassword = async () => {
+    if (!user?.id) return
+    if (!newPwd || newPwd.length < 6) {
+      toast({ title: "La nueva contraseña debe tener al menos 6 caracteres." })
+      return
+    }
+    if (newPwd !== confirmPwd) {
+      toast({ title: "La confirmación no coincide." })
+      return
+    }
+    setChangingPwd(true)
+    try {
+      await changePassword(currentPwd, newPwd)
+      setCurrentPwd("")
+      setNewPwd("")
+      setConfirmPwd("")
+      toast({ title: "Éxito", description: "Tu contraseña ha sido actualizada." })
+    } catch {
+      toast({
+        title: "Error",
+        description: "No se pudo cambiar la contraseña. Verifica la contraseña actual o vuelve a iniciar sesión e inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    }
+    setChangingPwd(false)
   }
 
-  const getVisibilityText = (value: string) => {
-    switch (value) {
-      case "public":
-        return "Público - Todos pueden ver"
-      case "friends":
-        return "Seguidores - Solo quienes sigues"
-      case "private":
-        return "Privado - Solo tú"
-      default:
-        return value
-    }
-  }
-
-  const getMessagingText = (value: string) => {
-    switch (value) {
-      case "everyone":
-        return "Todos los usuarios"
-      case "verified":
-        return "Solo usuarios verificados"
-      case "following":
-        return "Solo quienes sigo"
-      default:
-        return value
-    }
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand-ui" />
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/configuracion">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="font-semibold text-gray-900">Privacidad y Seguridad</h1>
-          </div>
-          <Button size="sm" onClick={handleSave} disabled={isSaving} className="bg-emerald-500 hover:bg-emerald-600">
-            {isSaving ? "Guardando..." : "Guardar"}
-          </Button>
-        </div>
-      </header>
-
-      <div className="p-4 space-y-4">
-        {/* Privacy Overview */}
-        <Alert>
-          <Shield className="h-4 w-4" />
-          <AlertDescription>
-            Tu privacidad es importante. Controla qué información compartes y con quién. Los cambios se aplican
-            inmediatamente.
-          </AlertDescription>
-        </Alert>
-
-        {/* Profile Privacy */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="h-5 w-5 text-blue-500" />
-              Privacidad del Perfil
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-gray-500" />
-                  <span className="font-medium">Visibilidad del perfil</span>
-                </div>
-              </div>
-              <Select
-                value={settings.profile.profileVisibility}
-                onValueChange={(value) => updateSetting("profile", "profileVisibility", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="public">
-                    <div className="flex items-center gap-2">
-                      <Globe className="h-4 w-4" />
-                      <span>Público - Todos pueden ver</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="friends">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>Seguidores - Solo quienes sigues</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="private">
-                    <div className="flex items-center gap-2">
-                      <Lock className="h-4 w-4" />
-                      <span>Privado - Solo tú</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Mostrar correo electrónico</p>
-                    <p className="text-sm text-gray-500">Otros usuarios pueden ver tu email</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.profile.showEmail}
-                  onCheckedChange={(checked) => updateSetting("profile", "showEmail", checked)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Mostrar teléfono</p>
-                    <p className="text-sm text-gray-500">Visible en tu perfil público</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.profile.showPhone}
-                  onCheckedChange={(checked) => updateSetting("profile", "showPhone", checked)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Mostrar ubicación</p>
-                    <p className="text-sm text-gray-500">Ciudad y provincia en tu perfil</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.profile.showLocation}
-                  onCheckedChange={(checked) => updateSetting("profile", "showLocation", checked)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Mostrar última conexión</p>
-                    <p className="text-sm text-gray-500">Cuándo estuviste activo por última vez</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.profile.showLastSeen}
-                  onCheckedChange={(checked) => updateSetting("profile", "showLastSeen", checked)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Estado en línea</p>
-                    <p className="text-sm text-gray-500">Mostrar cuando estás conectado</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.profile.showOnlineStatus}
-                  onCheckedChange={(checked) => updateSetting("profile", "showOnlineStatus", checked)}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Messaging Privacy */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <MessageCircle className="h-5 w-5 text-green-500" />
-              Privacidad de Mensajes
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Permitir mensajes</p>
-                <p className="text-sm text-gray-500">Otros usuarios pueden enviarte mensajes</p>
-              </div>
-              <Switch
-                checked={settings.messaging.allowMessages}
-                onCheckedChange={(checked) => updateSetting("messaging", "allowMessages", checked)}
-              />
-            </div>
-
-            {settings.messaging.allowMessages && (
-              <>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <UserCheck className="h-4 w-4 text-gray-500" />
-                      <span className="font-medium">Permitir mensajes de</span>
-                    </div>
-                  </div>
-                  <Select
-                    value={settings.messaging.allowMessagesFrom}
-                    onValueChange={(value) => updateSetting("messaging", "allowMessagesFrom", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="everyone">Todos los usuarios</SelectItem>
-                      <SelectItem value="verified">Solo usuarios verificados</SelectItem>
-                      <SelectItem value="following">Solo quienes sigo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Confirmaciones de lectura</p>
-                    <p className="text-sm text-gray-500">Mostrar cuando lees mensajes</p>
-                  </div>
-                  <Switch
-                    checked={settings.messaging.readReceipts}
-                    onCheckedChange={(checked) => updateSetting("messaging", "readReceipts", checked)}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Indicadores de escritura</p>
-                    <p className="text-sm text-gray-500">Mostrar cuando estás escribiendo</p>
-                  </div>
-                  <Switch
-                    checked={settings.messaging.typingIndicators}
-                    onCheckedChange={(checked) => updateSetting("messaging", "typingIndicators", checked)}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Solicitudes de mensaje</p>
-                    <p className="text-sm text-gray-500">Filtrar mensajes de desconocidos</p>
-                  </div>
-                  <Switch
-                    checked={settings.messaging.messageRequests}
-                    onCheckedChange={(checked) => updateSetting("messaging", "messageRequests", checked)}
-                  />
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Activity Privacy */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Eye className="h-5 w-5 text-purple-500" />
-              Privacidad de Actividad
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Camera className="h-4 w-4 text-gray-500" />
-                <div>
-                  <p className="font-medium">Mostrar compras</p>
-                  <p className="text-sm text-gray-500">Artículos que has comprado</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.activity.showPurchases}
-                onCheckedChange={(checked) => updateSetting("activity", "showPurchases", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Settings className="h-4 w-4 text-gray-500" />
-                <div>
-                  <p className="font-medium">Mostrar ventas</p>
-                  <p className="text-sm text-gray-500">Artículos que has vendido</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.activity.showSales}
-                onCheckedChange={(checked) => updateSetting("activity", "showSales", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Heart className="h-4 w-4 text-gray-500" />
-                <div>
-                  <p className="font-medium">Mostrar favoritos</p>
-                  <p className="text-sm text-gray-500">Artículos que te gustan</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.activity.showFavorites}
-                onCheckedChange={(checked) => updateSetting("activity", "showFavorites", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-gray-500" />
-                <div>
-                  <p className="font-medium">Mostrar seguidos</p>
-                  <p className="text-sm text-gray-500">Usuarios que sigues</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.activity.showFollowing}
-                onCheckedChange={(checked) => updateSetting("activity", "showFollowing", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Star className="h-4 w-4 text-gray-500" />
-                <div>
-                  <p className="font-medium">Mostrar reseñas</p>
-                  <p className="text-sm text-gray-500">Reseñas que has escrito</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.activity.showReviews}
-                onCheckedChange={(checked) => updateSetting("activity", "showReviews", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 text-gray-500" />
-                <div>
-                  <p className="font-medium">Estado de actividad</p>
-                  <p className="text-sm text-gray-500">Mostrar tu actividad reciente</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.activity.activityStatus}
-                onCheckedChange={(checked) => updateSetting("activity", "activityStatus", checked)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Search Privacy */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Globe className="h-5 w-5 text-orange-500" />
-              Privacidad de Búsqueda
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Búsqueda por email</p>
-                <p className="text-sm text-gray-500">Otros pueden encontrarte por tu email</p>
-              </div>
-              <Switch
-                checked={settings.search.searchableByEmail}
-                onCheckedChange={(checked) => updateSetting("search", "searchableByEmail", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Búsqueda por teléfono</p>
-                <p className="text-sm text-gray-500">Otros pueden encontrarte por tu teléfono</p>
-              </div>
-              <Switch
-                checked={settings.search.searchableByPhone}
-                onCheckedChange={(checked) => updateSetting("search", "searchableByPhone", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Búsqueda por nombre</p>
-                <p className="text-sm text-gray-500">Aparecer en resultados de búsqueda</p>
-              </div>
-              <Switch
-                checked={settings.search.searchableByName}
-                onCheckedChange={(checked) => updateSetting("search", "searchableByName", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Sugerencias de usuarios</p>
-                <p className="text-sm text-gray-500">Aparecer en sugerencias de seguimiento</p>
-              </div>
-              <Switch
-                checked={settings.search.showInSuggestions}
-                onCheckedChange={(checked) => updateSetting("search", "showInSuggestions", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Indexar perfil</p>
-                <p className="text-sm text-gray-500">Permitir indexación en motores de búsqueda</p>
-              </div>
-              <Switch
-                checked={settings.search.indexProfile}
-                onCheckedChange={(checked) => updateSetting("search", "indexProfile", checked)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Data Privacy */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Shield className="h-5 w-5 text-red-500" />
-              Privacidad de Datos
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                Estas configuraciones afectan cómo recopilamos y usamos tus datos para mejorar tu experiencia.
-              </AlertDescription>
-            </Alert>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Recopilación de datos</p>
-                <p className="text-sm text-gray-500">Permitir recopilación para mejorar el servicio</p>
-              </div>
-              <Switch
-                checked={settings.data.dataCollection}
-                onCheckedChange={(checked) => updateSetting("data", "dataCollection", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Análisis de uso</p>
-                <p className="text-sm text-gray-500">Ayudar a mejorar la app con datos anónimos</p>
-              </div>
-              <Switch
-                checked={settings.data.analytics}
-                onCheckedChange={(checked) => updateSetting("data", "analytics", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Personalización</p>
-                <p className="text-sm text-gray-500">Usar datos para personalizar tu experiencia</p>
-              </div>
-              <Switch
-                checked={settings.data.personalization}
-                onCheckedChange={(checked) => updateSetting("data", "personalization", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Compartir con terceros</p>
-                <p className="text-sm text-gray-500">Compartir datos con socios de confianza</p>
-              </div>
-              <Switch
-                checked={settings.data.thirdPartySharing}
-                onCheckedChange={(checked) => updateSetting("data", "thirdPartySharing", checked)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Security Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Lock className="h-5 w-5 text-gray-600" />
-              Acciones de Seguridad
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Link href="/configuracion/cambiar-password">
-              <Button variant="outline" className="w-full justify-start bg-transparent">
-                <Lock className="h-4 w-4 mr-2" />
-                Cambiar Contraseña
-              </Button>
-            </Link>
-
-            <Link href="/configuracion/sesiones">
-              <Button variant="outline" className="w-full justify-start bg-transparent">
-                <Smartphone className="h-4 w-4 mr-2" />
-                Gestionar Sesiones Activas
-              </Button>
-            </Link>
-
-            <Link href="/configuracion/verificacion">
-              <Button variant="outline" className="w-full justify-start bg-transparent">
-                <UserCheck className="h-4 w-4 mr-2" />
-                Verificación de Identidad
-              </Button>
-            </Link>
-
-            <Link href="/configuracion/bloqueos">
-              <Button variant="outline" className="w-full justify-start bg-transparent">
-                <EyeOff className="h-4 w-4 mr-2" />
-                Usuarios Bloqueados
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-
-        {/* Privacy Tips */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-500" />
-              Consejos de Privacidad
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm font-medium text-blue-800 mb-1">💡 Perfil Público vs Privado</p>
-              <p className="text-sm text-blue-700">
-                Un perfil público te ayuda a vender más, pero considera qué información personal compartes.
-              </p>
-            </div>
-
-            <div className="p-3 bg-green-50 rounded-lg">
-              <p className="text-sm font-medium text-green-800 mb-1">🔒 Verificación Recomendada</p>
-              <p className="text-sm text-green-700">
-                Los usuarios verificados generan más confianza y tienen mejor tasa de ventas.
-              </p>
-            </div>
-
-            <div className="p-3 bg-yellow-50 rounded-lg">
-              <p className="text-sm font-medium text-yellow-800 mb-1">⚠️ Información Sensible</p>
-              <p className="text-sm text-yellow-700">
-                Nunca compartas información bancaria o documentos de identidad por mensajes privados.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+    <div className="min-h-screen bg-gray-50 pb-10">
+      <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <h1 className="font-semibold text-gray-900">Privacidad y Seguridad</h1>
       </div>
 
-      {/* Bottom spacing */}
-      <div className="h-20"></div>
+      <div className="p-4 max-w-2xl mx-auto space-y-4">
+        <div className="flex items-start gap-2 bg-brand-extraLight border border-brand-light rounded-lg p-3">
+          <ShieldCheck className="h-4 w-4 text-brand-ui shrink-0 mt-0.5" />
+          <p className="text-xs text-brand-dark leading-relaxed">
+            Tu privacidad es importante. Controla qué información compartes y con quién. Los cambios se guardan al
+            presionar &quot;Guardar cambios&quot;.
+          </p>
+        </div>
+
+        {user?.id && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <p className="font-bold text-brand-dark text-sm">Cambiar contraseña</p>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Contraseña actual</p>
+              <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)} placeholder="••••••••" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Nueva contraseña</p>
+              <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Confirmar nueva contraseña</p>
+              <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)} placeholder="Repite la nueva contraseña" />
+            </div>
+            <Button className="w-full bg-brand-ui hover:bg-brand-dark" disabled={changingPwd} onClick={handleChangePassword}>
+              {changingPwd ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Actualizar contraseña
+            </Button>
+          </div>
+        )}
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+          <p className="font-bold text-brand-dark text-sm mb-2">Privacidad del Perfil</p>
+          <p className="text-xs text-gray-500 mb-1">Visibilidad del Perfil</p>
+          <SegmentedRow
+            options={profileVisibilityOptions}
+            value={settings.PrivacidadDelPerfil.visibilidadPerfil}
+            onChange={(v) => updateSetting("PrivacidadDelPerfil", "visibilidadPerfil", v)}
+          />
+          <SwitchRow label="Mostrar Correo Electrónico" checked={settings.PrivacidadDelPerfil.mostrarCorreoElectronico} onCheckedChange={(v) => updateSetting("PrivacidadDelPerfil", "mostrarCorreoElectronico", v)} />
+          <SwitchRow label="Mostrar Teléfono" checked={settings.PrivacidadDelPerfil.mostrarTelefono} onCheckedChange={(v) => updateSetting("PrivacidadDelPerfil", "mostrarTelefono", v)} />
+          <SwitchRow label="Mostrar Ubicación" checked={settings.PrivacidadDelPerfil.mostrarUbicacion} onCheckedChange={(v) => updateSetting("PrivacidadDelPerfil", "mostrarUbicacion", v)} />
+          <SwitchRow label="Mostrar Última Conexión" checked={settings.PrivacidadDelPerfil.mostrarUltimaConexion} onCheckedChange={(v) => updateSetting("PrivacidadDelPerfil", "mostrarUltimaConexion", v)} />
+          <SwitchRow label="Estado en Línea" checked={settings.PrivacidadDelPerfil.mostrarEstadoEnLinea} onCheckedChange={(v) => updateSetting("PrivacidadDelPerfil", "mostrarEstadoEnLinea", v)} />
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+          <p className="font-bold text-brand-dark text-sm mb-2">Privacidad de Mensajes</p>
+          <SwitchRow label="Permitir Mensajes" checked={settings.PrivacidadDeMensajes.permitirMensajes} onCheckedChange={(v) => updateSetting("PrivacidadDeMensajes", "permitirMensajes", v)} />
+          {settings.PrivacidadDeMensajes.permitirMensajes && (
+            <>
+              <p className="text-xs text-gray-500 mb-1 mt-2">Permitir Mensajes de</p>
+              <SegmentedRow
+                options={allowMessagesFromOptions}
+                value={settings.PrivacidadDeMensajes.permitirMensajesDe}
+                onChange={(v) => updateSetting("PrivacidadDeMensajes", "permitirMensajesDe", v)}
+              />
+              <SwitchRow label="Confirmaciones de lectura" checked={settings.PrivacidadDeMensajes.confirmacionesDeLectura} onCheckedChange={(v) => updateSetting("PrivacidadDeMensajes", "confirmacionesDeLectura", v)} />
+              <SwitchRow label="Indicadores de Escritura" checked={settings.PrivacidadDeMensajes.indicadoresDeEscritura} onCheckedChange={(v) => updateSetting("PrivacidadDeMensajes", "indicadoresDeEscritura", v)} />
+              <SwitchRow label="Solicitudes de Mensaje" checked={settings.PrivacidadDeMensajes.solicitudesDeMensajes} onCheckedChange={(v) => updateSetting("PrivacidadDeMensajes", "solicitudesDeMensajes", v)} />
+            </>
+          )}
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+          <p className="font-bold text-brand-dark text-sm mb-2">Privacidad de Actividad</p>
+          <SwitchRow label="Mostrar Compras" checked={settings.PrivacidadDeActividad.mostrarCompras} onCheckedChange={(v) => updateSetting("PrivacidadDeActividad", "mostrarCompras", v)} />
+          <SwitchRow label="Mostrar Ventas" checked={settings.PrivacidadDeActividad.mostrarVentas} onCheckedChange={(v) => updateSetting("PrivacidadDeActividad", "mostrarVentas", v)} />
+          <SwitchRow label="Mostrar Favoritos" checked={settings.PrivacidadDeActividad.mostrarFavoritos} onCheckedChange={(v) => updateSetting("PrivacidadDeActividad", "mostrarFavoritos", v)} />
+          <SwitchRow label="Mostrar Seguidos" checked={settings.PrivacidadDeActividad.mostrarSeguidos} onCheckedChange={(v) => updateSetting("PrivacidadDeActividad", "mostrarSeguidos", v)} />
+          <SwitchRow label="Mostrar Reseñas" checked={settings.PrivacidadDeActividad.mostrarResenas} onCheckedChange={(v) => updateSetting("PrivacidadDeActividad", "mostrarResenas", v)} />
+          <SwitchRow label="Estado de Actividad" checked={settings.PrivacidadDeActividad.estadoDeActividad} onCheckedChange={(v) => updateSetting("PrivacidadDeActividad", "estadoDeActividad", v)} />
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+          <p className="font-bold text-brand-dark text-sm mb-2">Privacidad de Búsqueda</p>
+          <SwitchRow label="Búsqueda por Teléfono" checked={settings.PrivacidadDeBusqueda.buscarPorTelefono} onCheckedChange={(v) => updateSetting("PrivacidadDeBusqueda", "buscarPorTelefono", v)} />
+          <SwitchRow label="Búsqueda por Nombre" checked={settings.PrivacidadDeBusqueda.buscarPorNombre} onCheckedChange={(v) => updateSetting("PrivacidadDeBusqueda", "buscarPorNombre", v)} />
+          <SwitchRow label="Sugerencias de Usuarios" checked={settings.PrivacidadDeBusqueda.sugerenciasDeUsuarios} onCheckedChange={(v) => updateSetting("PrivacidadDeBusqueda", "sugerenciasDeUsuarios", v)} />
+          <SwitchRow label="Indexar Perfil" checked={settings.PrivacidadDeBusqueda.indexarPerfil} onCheckedChange={(v) => updateSetting("PrivacidadDeBusqueda", "indexarPerfil", v)} />
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+          <p className="font-bold text-brand-dark text-sm mb-2">Privacidad de Datos</p>
+          <SwitchRow label="Recopilación de Datos" checked={settings.PrivacidadDeDatos.recopilacionDeDatos} onCheckedChange={(v) => updateSetting("PrivacidadDeDatos", "recopilacionDeDatos", v)} />
+          <SwitchRow label="Análisis de Uso" checked={settings.PrivacidadDeDatos.analisisDeUso} onCheckedChange={(v) => updateSetting("PrivacidadDeDatos", "analisisDeUso", v)} />
+          <SwitchRow label="Personalización" checked={settings.PrivacidadDeDatos.personalizacion} onCheckedChange={(v) => updateSetting("PrivacidadDeDatos", "personalizacion", v)} />
+          <SwitchRow label="Compartir con Terceros" checked={settings.PrivacidadDeDatos.compartirConTerceros} onCheckedChange={(v) => updateSetting("PrivacidadDeDatos", "compartirConTerceros", v)} />
+        </div>
+
+        <Button className="w-full bg-brand-ui hover:bg-brand-dark py-6" disabled={isSaving} onClick={handleSave}>
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          Guardar cambios
+        </Button>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
+          <p className="font-bold text-brand-dark text-sm mb-1 flex items-center gap-1.5">
+            <Lightbulb className="h-4 w-4" /> Consejos de Privacidad
+          </p>
+          <div className="bg-brand-extraLight rounded-lg p-3">
+            <p className="text-xs font-bold text-gray-900 mb-1">💡 Perfil Público vs Privado</p>
+            <p className="text-xs text-gray-600">Un perfil público te ayuda a vender más, pero considera qué información personal compartes.</p>
+          </div>
+          <div className="bg-green-50 rounded-lg p-3">
+            <p className="text-xs font-bold text-gray-900 mb-1">🔒 Verificación Recomendada</p>
+            <p className="text-xs text-gray-600">Los usuarios verificados generan más confianza y tienen mejor tasa de ventas.</p>
+          </div>
+          <div className="bg-yellow-50 rounded-lg p-3">
+            <p className="text-xs font-bold text-gray-900 mb-1">⚠️ Información Sensible</p>
+            <p className="text-xs text-gray-600">Nunca compartas información bancaria o documentos de identidad por mensajes privados.</p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
