@@ -291,14 +291,6 @@ export const TermsScreen: React.FC<TermsScreenProps> = ({ navigation }) => {
               <Text style={styles.contactLabel}>Email:</Text>
               <Text style={styles.contactValue}>legal@ropanova.com</Text>
             </View>
-            <View style={styles.contactItem}>
-              <Text style={styles.contactLabel}>Dirección:</Text>
-              <Text style={styles.contactValue}>Av. Winston Churchill, Plaza Central, Santo Domingo</Text>
-            </View>
-            <View style={styles.contactItem}>
-              <Text style={styles.contactLabel}>RNC:</Text>
-              <Text style={styles.contactValue}>132-45678-9</Text>
-            </View>
           </View>
         </View>
 

@@ -12,6 +12,7 @@ import {
 } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { app, auth } from "../firebaseConfig";
+import { registerForPushNotifications } from "../services/notificationService";
 
 interface User {
   id: string;
@@ -71,6 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
             setUser(fallbackUser);
           }
+          registerForPushNotifications(firebaseUser.uid).catch(() => {})
         } catch {
           const fallbackUser = {
             id: firebaseUser.uid,

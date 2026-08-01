@@ -381,7 +381,7 @@ const RegisterScreen: React.FC = ({ navigation, route }: any) => {
         ]
       );
     } catch (e) {
-      setError("Erreur lors de l'inscription");
+      setError("Error al crear la cuenta");
     } finally {
       setIsSubmitting(false);
     }

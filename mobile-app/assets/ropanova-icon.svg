@@ -1,0 +1,6 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RopaNova icon">
+  <rect width="128" height="128" rx="28" fill="#2F8AFC"/>
+  <path d="M28 36 L40 28 L44 68 L32 76 Z" fill="#FFFFFF"/>
+  <path d="M46 34 L58 26 L62 66 L50 74 Z" fill="#FFFFFF"/>
+  <text x="78" y="72" font-family="'Bebas Neue', Impact, sans-serif" font-size="36" fill="#FFFFFF" text-anchor="middle">R</text>
+</svg>

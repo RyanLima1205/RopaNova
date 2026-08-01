@@ -1,5 +1,7 @@
 import { logger } from '../utils/logger'
-import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, getDocs, Timestamp, orderBy, limit, startAfter, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+
+export type TransactionCursor = QueryDocumentSnapshot<DocumentData>
 import { app } from '../firebaseConfig';
 
 export interface PaymentMethod {
@@ -285,30 +287,39 @@ export const updateWalletBalance = async (userId: string, amount: number, type: 
 // GESTION DES TRANSACTIONS
 // ==========================================
 
-export const getRecentTransactions = async (userId: string, limit: number = 10): Promise<Transaction[]> => {
+export const getRecentTransactions = async (userId: string, pageLimit: number = 10): Promise<Transaction[]> => {
+  const { transactions } = await getTransactionsPaginated(userId, pageLimit)
+  return transactions
+}
+
+export const getTransactionsPaginated = async (
+  userId: string,
+  pageLimit: number = 20,
+  cursor?: TransactionCursor,
+): Promise<{ transactions: Transaction[]; cursor: TransactionCursor | null; hasMore: boolean }> => {
   try {
-    const transactionsRef = collection(db, 'users', userId, 'transactions');
-    const querySnapshot = await getDocs(transactionsRef);
-    
-    const transactions: Transaction[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      transactions.push({
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate() || new Date(),
-      } as Transaction);
-    });
-    
-    // Trier par date décroissante et limiter
-    return transactions
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, limit);
+    const ref = collection(db, 'users', userId, 'transactions')
+    const baseConstraints = [orderBy('createdAt', 'desc'), limit(pageLimit + 1)] as const
+    const q = cursor
+      ? query(ref, ...baseConstraints, startAfter(cursor))
+      : query(ref, ...baseConstraints)
+
+    const snap = await getDocs(q)
+    const docs = snap.docs
+    const hasMore = docs.length > pageLimit
+    const pageDocs = hasMore ? docs.slice(0, pageLimit) : docs
+
+    const transactions: Transaction[] = pageDocs.map((d) => {
+      const data = d.data()
+      return { id: d.id, ...data, createdAt: data.createdAt?.toDate() || new Date() } as Transaction
+    })
+
+    return { transactions, cursor: pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null, hasMore }
   } catch (error) {
-    logger.error('Erreur lors de la récupération des transactions:', error);
-    return [];
+    logger.error('Erreur lors de la récupération des transactions paginées:', error)
+    return { transactions: [], cursor: null, hasMore: false }
   }
-};
+}
 
 export const addTransaction = async (userId: string, transaction: Omit<Transaction, 'id' | 'createdAt'>): Promise<string> => {
   try {

@@ -296,10 +296,13 @@ export const OrderDetailScreen: React.FC = () => {
             accessibilityRole="button"
             accessibilityLabel="Ver producto"
           >
-            <Image
-              source={{ uri: order.productImage || 'https://via.placeholder.com/120' }}
-              style={styles.productImg}
-            />
+            {order.productImage ? (
+              <Image source={{ uri: order.productImage }} style={styles.productImg} />
+            ) : (
+              <View style={[styles.productImg, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="image-outline" size={32} color="#d1d5db" />
+              </View>
+            )}
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.productTitle}>{order.productTitle}</Text>
               {detailLine ? <Text style={styles.productDetail}>{detailLine}</Text> : null}
@@ -315,7 +318,13 @@ export const OrderDetailScreen: React.FC = () => {
             style={styles.sellerRow}
             onPress={() => navigation.navigate('UserProfile', { viewUserId: order.sellerId })}
           >
-            <Image source={{ uri: order.sellerAvatar || 'https://via.placeholder.com/40' }} style={styles.sellerAvatar} />
+            {order.sellerAvatar ? (
+              <Image source={{ uri: order.sellerAvatar }} style={styles.sellerAvatar} />
+            ) : (
+              <View style={[styles.sellerAvatar, { backgroundColor: '#e5e7eb', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="person" size={20} color="#9ca3af" />
+              </View>
+            )}
             <Text style={styles.sellerName}>{order.sellerName}</Text>
             <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
           </TouchableOpacity>

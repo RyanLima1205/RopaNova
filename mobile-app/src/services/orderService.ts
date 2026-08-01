@@ -44,6 +44,9 @@ export interface BuyerOrder {
   estimatedDelivery?: string;
   reviewId?: string;
   hasReview?: boolean;
+  /** Populated only in seller view — fetched from users/{buyerId} */
+  buyerName?: string;
+  buyerAvatar?: string;
 }
 
 export interface CreateOrderInput {
@@ -104,6 +107,27 @@ function mapSnapToBuyerOrder(docSnap: { id: string; data: () => Record<string, u
   };
 }
 
+export async function fetchOrderForSeller(orderId: string, sellerId: string): Promise<BuyerOrder | null> {
+  const ref = doc(db, 'orders', orderId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  const row = mapSnapToBuyerOrder(snap);
+  if (row.sellerId !== sellerId) return null;
+  try {
+    const userSnap = await getDoc(doc(db, 'users', row.buyerId));
+    if (userSnap.exists()) {
+      const d = userSnap.data();
+      const name =
+        d.storeName ||
+        `${d.name || ''} ${d.lastname || ''}`.trim() ||
+        d.username ||
+        'Cliente';
+      return { ...row, buyerName: name, buyerAvatar: typeof d.avatar === 'string' ? d.avatar : '' };
+    }
+  } catch {}
+  return { ...row, buyerName: 'Cliente', buyerAvatar: '' };
+}
+
 export async function fetchOrderForBuyer(orderId: string, buyerId: string): Promise<BuyerOrder | null> {
   const ref = doc(db, 'orders', orderId);
   const snap = await getDoc(ref);
@@ -160,6 +184,63 @@ export async function fetchOrdersForBuyer(buyerId: string): Promise<BuyerOrder[]
     return tb - ta;
   });
   return rows;
+}
+
+export async function fetchOrdersForSeller(sellerId: string): Promise<BuyerOrder[]> {
+  const q = query(collection(db, 'orders'), where('sellerId', '==', sellerId));
+  const snap = await getDocs(q);
+  const rows = snap.docs.map((docSnap) => mapSnapToBuyerOrder(docSnap));
+  rows.sort((a, b) => {
+    const ta = a.createdAt?.getTime() ?? 0;
+    const tb = b.createdAt?.getTime() ?? 0;
+    return tb - ta;
+  });
+
+  const uniqueBuyerIds = [...new Set(rows.map((r) => r.buyerId).filter(Boolean))];
+  const buyerMap = new Map<string, { name: string; avatar: string }>();
+  await Promise.all(
+    uniqueBuyerIds.map(async (buyerId) => {
+      try {
+        const userSnap = await getDoc(doc(db, 'users', buyerId));
+        if (userSnap.exists()) {
+          const d = userSnap.data();
+          const name =
+            d.storeName ||
+            `${d.name || ''} ${d.lastname || ''}`.trim() ||
+            d.username ||
+            'Cliente';
+          buyerMap.set(buyerId, { name, avatar: typeof d.avatar === 'string' ? d.avatar : '' });
+        }
+      } catch {
+        // buyer profile unreadable — show generic name
+      }
+    }),
+  );
+
+  return rows.map((order) => ({
+    ...order,
+    buyerName: buyerMap.get(order.buyerId)?.name ?? 'Cliente',
+    buyerAvatar: buyerMap.get(order.buyerId)?.avatar ?? '',
+  }));
+}
+
+export async function updateOrderStatus(
+  orderId: string,
+  sellerId: string,
+  newStatus: OrderStatus,
+  extras?: { trackingNumber?: string; estimatedDelivery?: string },
+): Promise<void> {
+  const ref = doc(db, 'orders', orderId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('NOT_FOUND');
+  const data = snap.data();
+  if (data.sellerId !== sellerId) throw new Error('FORBIDDEN');
+  await updateDoc(ref, {
+    status: newStatus,
+    updatedAt: serverTimestamp(),
+    ...(extras?.trackingNumber ? { trackingNumber: extras.trackingNumber } : {}),
+    ...(extras?.estimatedDelivery ? { estimatedDelivery: extras.estimatedDelivery } : {}),
+  });
 }
 
 export async function cancelOrderAsBuyer(orderId: string, buyerId: string): Promise<void> {

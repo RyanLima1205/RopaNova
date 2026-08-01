@@ -21,6 +21,12 @@ import { StackNavigationProp } from '@react-navigation/stack'
 import { RootStackParamList } from '../../App'
 import { useAuth } from '../contexts/AuthContext'
 import { ProductCard } from '../components/ProductCard'
+import { Header } from '../components/Header'
+import { IconButton } from '../components/IconButton'
+import { Card } from '../components/Card'
+import { Badge as BadgePill } from '../components/Badge'
+import { EmptyState } from '../components/EmptyState'
+import { brandColors, radii, semanticColors, shadows, spacing, typography } from '../theme'
 import { useFavoriteProductIds } from '../hooks/useFavoriteProductIds'
 import { logger } from '../utils/logger'
 import { getFirestore, doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -115,18 +121,6 @@ interface UserListing {
   talla: string[]; // Tailles extraites depuis stock[].talla
   status?: 'active' | 'sold' | 'inactive';
 }
-
-const myFavorites = [
-  {
-    id: 4,
-    image: 'https://via.placeholder.com/200',
-    title: 'Chaqueta de Cuero Vintage',
-    price: 4500,
-    condition: 'Usado',
-    seller: 'Ana Rodríguez',
-    location: 'Santiago',
-  },
-]
 
 // Fonction utilitaire pour formater la date createdAt (supporte string ou Firestore Timestamp)
 function formatCreatedAt(createdAt?: any) {
@@ -596,9 +590,7 @@ export const ProfileScreen: React.FC = () => {
     try {
       // Vérifier si l'URL est valide
       if (!avatarUrl || avatarUrl.trim() === '') {
-        logger.log('URL d\'avatar invalide, utilisation de l\'avatar par défaut');
-        // Retourner la taille par défaut pour les comptes privés
-        return 'https://via.placeholder.com/80x80/4ade80/ffffff?text=Avatar';
+        return '';
       }
 
       // 1. Vérifier le cache en mémoire
@@ -666,8 +658,7 @@ export const ProfileScreen: React.FC = () => {
     try {
       // Vérifier si l'URL est valide
       if (!coverUrl || coverUrl.trim() === '') {
-        logger.log('URL de couverture invalide, utilisation de la couverture par défaut');
-        return 'https://via.placeholder.com/1200x675/4ade80/ffffff?text=Portada';
+        return '';
       }
 
       // 1. Vérifier le cache en mémoire
@@ -1006,9 +997,11 @@ export const ProfileScreen: React.FC = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: '#059669', fontSize: 16 }}>Cargando perfil...</Text>
+          <Text style={{ color: brandColors.primaryUI, fontSize: 16, fontFamily: typography.body.fontFamily }}>
+            Cargando perfil...
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -1016,26 +1009,28 @@ export const ProfileScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isOwnProfile ? 'Mi Perfil' : 'Perfil'}</Text>
-        <View style={styles.headerActions}>
-          {isOwnProfile && (
-            <>
-              <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('DashboardScreen')}>
-                <Ionicons name="bar-chart" size={22} color="#059669" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('SettingsScreen')}>
-                <Ionicons name="settings-outline" size={22} color="#111827" />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
+      <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
+      <Header
+        title={isOwnProfile ? 'Mi Perfil' : 'Perfil'}
+        rightElement={
+          isOwnProfile ? (
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <IconButton
+                name="bar-chart"
+                variant="ghost"
+                color={brandColors.primaryUI}
+                onPress={() => navigation.navigate('DashboardScreen')}
+              />
+              <IconButton
+                name="settings-outline"
+                variant="ghost"
+                color={brandColors.textPrimary}
+                onPress={() => navigation.navigate('SettingsScreen')}
+              />
+            </View>
+          ) : undefined
+        }
+      />
 
       {/* Toast Notification */}
       {showToast && (
@@ -1072,25 +1067,27 @@ export const ProfileScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#059669']} // Android
-            tintColor="#059669" // iOS
+            colors={[brandColors.primaryUI]} // Android
+            tintColor={brandColors.primaryUI} // iOS
             title="Actualizando perfil..." // iOS
-            titleColor="#059669" // iOS
+            titleColor={brandColors.primaryUI} // iOS
           />
         }
       >
         {/* Cover Image */}
         <View style={styles.coverContainer}>
-          <Image 
-            source={{ 
-              uri: userData.coverImage && userData.coverImage.trim() !== '' 
-                ? userData.coverImage 
-                : 'https://via.placeholder.com/1200x675/4ade80/ffffff?text=Portada'
-            }} 
-            style={styles.coverImage}
-            onLoadStart={() => setCacheLoading(true)}
-            onLoadEnd={() => setCacheLoading(false)}
-          />
+          {userData.coverImage && userData.coverImage.trim() !== '' ? (
+            <Image
+              source={{ uri: userData.coverImage }}
+              style={styles.coverImage}
+              onLoadStart={() => setCacheLoading(true)}
+              onLoadEnd={() => setCacheLoading(false)}
+            />
+          ) : (
+            <View style={[styles.coverImage, { backgroundColor: brandColors.primaryLight, justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="image-outline" size={48} color={brandColors.primaryUI} />
+            </View>
+          )}
           {/* Badge vérifié style Instagram sur la couverture */}
           {/* Supprimé - déplacé sur la photo de profil */}
           {isOwnProfile && (
@@ -1101,10 +1098,10 @@ export const ProfileScreen: React.FC = () => {
           >
             {uploadingCover ? (
               <View style={styles.uploadingIndicator}>
-                <Ionicons 
-                  name="sync" 
-                  size={18} 
-                  color="#059669" 
+                <Ionicons
+                  name="sync"
+                  size={18}
+                  color={brandColors.primaryUI}
                   style={[
                     styles.rotatingIcon,
                     { transform: [{ rotate: `${compressionProgress * 3.6}deg` }] }
@@ -1112,7 +1109,7 @@ export const ProfileScreen: React.FC = () => {
                 />
               </View>
             ) : (
-              <Ionicons name="camera-outline" size={18} color="#059669" />
+              <Ionicons name="camera-outline" size={18} color={brandColors.primaryUI} />
             )}
           </TouchableOpacity>
           )}
@@ -1121,23 +1118,35 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.profileInfo}>
           <View style={styles.avatarRow}>
             <View style={styles.avatarContainer}>
-              <Image 
-                source={{ 
-                  uri: userData.avatar && userData.avatar.trim() !== '' 
-                    ? userData.avatar 
-                    : (userData.accountType === 'fisica' || userData.accountType === 'virtual')
-                      ? 'https://via.placeholder.com/160x160/4ade80/ffffff?text=Avatar'
-                      : 'https://via.placeholder.com/80x80/4ade80/ffffff?text=Avatar'
-                }} 
-                style={[
-                  styles.avatar,
-                  (userData.accountType === 'fisica' || userData.accountType === 'virtual') 
-                    ? styles.avatarSquare 
-                    : styles.avatarRound
-                ]}
-                onLoadStart={() => setCacheLoading(true)}
-                onLoadEnd={() => setCacheLoading(false)}
-              />
+              {userData.avatar && userData.avatar.trim() !== '' ? (
+                <Image
+                  source={{ uri: userData.avatar }}
+                  style={[
+                    styles.avatar,
+                    (userData.accountType === 'fisica' || userData.accountType === 'virtual')
+                      ? styles.avatarSquare
+                      : styles.avatarRound,
+                  ]}
+                  onLoadStart={() => setCacheLoading(true)}
+                  onLoadEnd={() => setCacheLoading(false)}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.avatar,
+                    (userData.accountType === 'fisica' || userData.accountType === 'virtual')
+                      ? styles.avatarSquare
+                      : styles.avatarRound,
+                    { backgroundColor: brandColors.primaryLight, justifyContent: 'center', alignItems: 'center' },
+                  ]}
+                >
+                  <Ionicons
+                    name={(userData.accountType === 'fisica' || userData.accountType === 'virtual') ? 'storefront-outline' : 'person'}
+                    size={(userData.accountType === 'fisica' || userData.accountType === 'virtual') ? 64 : 32}
+                    color={brandColors.primaryUI}
+                  />
+                </View>
+              )}
               {cacheLoading && (
                 <View style={[
                   styles.cacheLoadingOverlay,
@@ -1147,21 +1156,21 @@ export const ProfileScreen: React.FC = () => {
                     height: (userData.accountType === 'fisica' || userData.accountType === 'virtual') ? 160 : 80
                   }
                 ]}>
-                  <Ionicons name="cloud-download" size={18} color="#059669" />
+                  <Ionicons name="cloud-download" size={18} color={brandColors.primaryUI} />
                 </View>
               )}
               {isOwnProfile && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.avatarEditButton, uploadingAvatar && styles.avatarEditButtonDisabled]}
                 onPress={handleImageSource}
                 disabled={uploadingAvatar}
               >
                 {uploadingAvatar ? (
                   <View style={styles.uploadingIndicator}>
-                    <Ionicons 
-                      name="sync" 
-                      size={18} 
-                      color="#059669" 
+                    <Ionicons
+                      name="sync"
+                      size={18}
+                      color={brandColors.primaryUI}
                       style={[
                         styles.rotatingIcon,
                         { transform: [{ rotate: `${compressionProgress * 3.6}deg` }] }
@@ -1169,7 +1178,7 @@ export const ProfileScreen: React.FC = () => {
                     />
                   </View>
                 ) : (
-                  <Ionicons name="pencil" size={18} color="#059669" />
+                  <Ionicons name="pencil" size={18} color={brandColors.primaryUI} />
                 )}
               </TouchableOpacity>
               )}
@@ -1185,31 +1194,29 @@ export const ProfileScreen: React.FC = () => {
                   </Text>
                   {userData.verified && (
                     <View style={styles.verifiedBadge}>
-                      <Ionicons name="checkmark" size={12} color="#ffffff" />
+                      <Ionicons name="checkmark" size={12} color={brandColors.white} />
                     </View>
                   )}
                 </View>
                 <Text style={styles.username} numberOfLines={1}>@{userData.username.replace(/^@/, '')}</Text>
               </View>
               <View style={styles.badgesRow}>
-                {/* Autres badges */}
+                {/* Autres badges (couleur propre à chaque badge, définie côté données) */}
                 {(userData.badges as Badge[]).slice(0, 3).map((badge, idx) => (
-                  <View key={idx} style={[styles.badge, { backgroundColor: badge.color + '22' }]}> 
+                  <View key={idx} style={[styles.badge, { backgroundColor: badge.color + '22' }]}>
                     <Ionicons name={badge.icon as any} size={12} color={badge.color} style={{ marginRight: 3 }} />
-                    <Text style={{ color: badge.color, fontSize: 11 }}>{badge.name}</Text>
+                    <Text style={{ color: badge.color, fontSize: 11, fontFamily: typography.caption.fontFamily }}>{badge.name}</Text>
                   </View>
                 ))}
                 {userData.badges.length > 3 && (
-                  <View style={[styles.badge, { backgroundColor: '#e5e7eb' }]}> 
-                    <Text style={{ color: '#374151', fontSize: 11 }}>+{userData.badges.length - 3} más</Text>
-                  </View>
+                  <BadgePill label={`+${userData.badges.length - 3} más`} tone="neutral" />
                 )}
               </View>
             </View>
           </View>
           <Text style={styles.bio}>{userData.bio}</Text>
           <View style={styles.infoRow}>
-            <Ionicons name="location-outline" size={14} color="#6b7280" />
+            <Ionicons name="location-outline" size={14} color={brandColors.textSecondary} />
             <Text style={styles.infoText}>
               {userData.province && userData.city
                 ? `${userData.province}, ${userData.city}`
@@ -1218,7 +1225,7 @@ export const ProfileScreen: React.FC = () => {
           </View>
           {userData.createdAt ? (
             <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={14} color="#6b7280" />
+              <Ionicons name="calendar-outline" size={14} color={brandColors.textSecondary} />
               <Text style={styles.infoText}>
                 Miembro desde {formatCreatedAt(userData.createdAt)}
               </Text>
@@ -1227,30 +1234,20 @@ export const ProfileScreen: React.FC = () => {
           {/* Badge type de boutique et Verificado */}
           <View style={styles.verificationBadgesRow}>
             {userData.accountType === 'fisica' && (
-              <View style={[styles.badge, { backgroundColor: '#05966922' }]}> 
-                <Ionicons name="storefront" size={12} color="#059669" style={{ marginRight: 3 }} />
-                <Text style={{ color: '#059669', fontSize: 11 }}>Tienda Física</Text>
-              </View>
+              <BadgePill label="Tienda Física" tone="info" icon="storefront" />
             )}
             {userData.accountType === 'virtual' && (
-              <View style={[styles.badge, { backgroundColor: '#8b5cf622' }]}> 
-                <Ionicons name="globe" size={12} color="#8b5cf6" style={{ marginRight: 3 }} />
-                <Text style={{ color: '#8b5cf6', fontSize: 11 }}>Tienda Virtual</Text>
-              </View>
+              <BadgePill label="Tienda Virtual" tone="virtualStore" icon="globe" />
             )}
             {userData.verified && (
-              <View style={[styles.badge, { backgroundColor: '#3b82f622' }]}> 
-                <Ionicons name="checkmark" size={12} color="#3b82f6" style={{ marginRight: 3 }} />
-                <Text style={{ color: '#3b82f6', fontSize: 11 }}>Verificado</Text>
-              </View>
+              <BadgePill label="Verificado" tone="info" icon="checkmark" />
             )}
           </View>
         </View>
         {/* Stats */}
         <View style={styles.statsRow}>
-          <TouchableOpacity
+          <Card
             style={styles.statCard}
-            activeOpacity={0.7}
             onPress={() => {
               if (profileUserId) {
                 navigation.navigate('SellerReviews', { sellerId: profileUserId })
@@ -1259,7 +1256,7 @@ export const ProfileScreen: React.FC = () => {
           >
             <View style={styles.statCardContent}>
               <View style={styles.statIconContainer}>
-                <Ionicons name="star" size={20} color="#f59e0b" />
+                <Ionicons name="star" size={20} color={semanticColors.warning} />
               </View>
               <Text style={styles.statCardValue}>
                 {sellerReviewStats.reviewCount > 0
@@ -1271,16 +1268,16 @@ export const ProfileScreen: React.FC = () => {
                 {sellerReviewStats.reviewCount === 1 ? 'reseña' : 'reseñas'}
               </Text>
             </View>
-          </TouchableOpacity>
-          <View style={styles.statCard}>
+          </Card>
+          <Card style={styles.statCard}>
             <View style={styles.statCardContent}>
               <View style={styles.statIconContainer}>
-                <Ionicons name="people" size={20} color="#3b82f6" />
+                <Ionicons name="people" size={20} color={brandColors.primaryUI} />
               </View>
               <Text style={styles.statCardValue}>{userData.stats.followers.toLocaleString()}</Text>
               <Text style={styles.statCardLabel}>Seguidores</Text>
             </View>
-          </View>
+          </Card>
         </View>
 
         {/* Section Produits du Vendeur */}
@@ -1295,11 +1292,11 @@ export const ProfileScreen: React.FC = () => {
               <Text style={styles.loadingText}>Cargando productos...</Text>
             </View>
           ) : myListings.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="bag-outline" size={48} color="#d1d5db" />
-              <Text style={styles.emptyText}>No hay productos disponibles</Text>
-              <Text style={styles.emptySubtext}>Este vendedor aún no ha publicado productos</Text>
-            </View>
+            <EmptyState
+              icon="bag-outline"
+              title="No hay productos disponibles"
+              subtitle="Este vendedor aún no ha publicado productos"
+            />
           ) : (
             <View style={styles.productsGridContainer}>
               {myListings.map((item) => (
@@ -1354,34 +1351,34 @@ export const ProfileScreen: React.FC = () => {
                 }}
               >
                 <View style={styles.actionMenuIcon}>
-                  <Ionicons name="create-outline" size={20} color="#3b82f6" />
+                  <Ionicons name="create-outline" size={20} color={brandColors.primaryUI} />
                 </View>
                 <Text style={styles.actionMenuText}>Modificar publicación</Text>
-                <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                <Ionicons name="chevron-forward" size={16} color={brandColors.textMuted} />
               </TouchableOpacity>
-              
+
               {/* Partager */}
               <TouchableOpacity
                 style={styles.actionMenuItem}
                 onPress={handleShareProduct}
               >
                 <View style={styles.actionMenuIcon}>
-                  <Ionicons name="share-outline" size={20} color="#059669" />
+                  <Ionicons name="share-outline" size={20} color={semanticColors.success} />
                 </View>
                 <Text style={styles.actionMenuText}>Compartir enlace</Text>
-                <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                <Ionicons name="chevron-forward" size={16} color={brandColors.textMuted} />
               </TouchableOpacity>
-              
+
               {/* Supprimer */}
               <TouchableOpacity
                 style={styles.actionMenuItem}
                 onPress={handleOpenDeleteModal}
               >
                 <View style={styles.actionMenuIcon}>
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  <Ionicons name="trash-outline" size={20} color={semanticColors.error} />
                 </View>
-                <Text style={[styles.actionMenuText, { color: '#ef4444' }]}>Eliminar publicación</Text>
-                <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                <Text style={[styles.actionMenuText, { color: semanticColors.error }]}>Eliminar publicación</Text>
+                <Ionicons name="chevron-forward" size={16} color={brandColors.textMuted} />
               </TouchableOpacity>
             </View>
           </View>
@@ -1398,7 +1395,7 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.deleteModalContent}>
             <View style={styles.deleteModalHeader}>
-              <Ionicons name="trash-outline" size={24} color="#ef4444" />
+              <Ionicons name="trash-outline" size={24} color={semanticColors.error} />
               <Text style={styles.deleteModalTitle}>Eliminar publicación</Text>
             </View>
             
@@ -1437,16 +1434,12 @@ export const ProfileScreen: React.FC = () => {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  headerButton: { padding: 6 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
-  headerActions: { flexDirection: 'row', gap: 8 },
+  container: { flex: 1, backgroundColor: brandColors.background },
   content: { flex: 1 },
-  coverContainer: { width: '100%', height: 240, backgroundColor: '#e0e7ef', position: 'relative' },
+  coverContainer: { width: '100%', height: 240, backgroundColor: brandColors.surfaceSecondary, position: 'relative', overflow: 'hidden', borderBottomLeftRadius: radii.large, borderBottomRightRadius: radii.large },
   coverImage: { width: '100%', height: '100%' },
-  coverEditButton: { position: 'absolute', bottom: 8, right: 12, backgroundColor: 'white', borderRadius: 16, padding: 6, elevation: 2 },
-  coverEditButtonDisabled: { opacity: 0.6, backgroundColor: '#f3f4f6' },
+  coverEditButton: { position: 'absolute', bottom: 8, right: 12, backgroundColor: brandColors.white, borderRadius: radii.pill, padding: 6, ...shadows.card },
+  coverEditButtonDisabled: { opacity: 0.6, backgroundColor: brandColors.surfaceSecondary },
   instagramVerifiedBadge: { 
     position: 'absolute', 
     top: 12, 
@@ -1491,12 +1484,12 @@ const styles = StyleSheet.create({
   nameVerifiedBadge: {
     marginLeft: 0
   },
-  verifiedBadge: { 
-    width: 20, 
-    height: 20, 
-    borderRadius: 10, 
-    backgroundColor: '#0095f6', 
-    alignItems: 'center', 
+  verifiedBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: brandColors.primaryUI,
+    alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 2,
     marginBottom: 2
@@ -1519,14 +1512,14 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 3
   },
-  profileInfo: { backgroundColor: 'white', paddingHorizontal: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  profileInfo: { backgroundColor: brandColors.surface, paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: brandColors.border },
   avatarRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: -56 },
   avatarContainer: { position: 'relative' },
-  avatar: { width: 80, height: 80, borderWidth: 3, borderColor: 'white' },
+  avatar: { width: 80, height: 80, borderWidth: 3, borderColor: brandColors.white },
   avatarRound: { borderRadius: 40 },
-  avatarSquare: { borderRadius: 0, width: 160, height: 160 },
-  avatarEditButton: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'white', borderRadius: 12, padding: 8, borderWidth: 1, borderColor: '#e5e7eb' },
-  avatarEditButtonDisabled: { opacity: 0.6, backgroundColor: '#f3f4f6' },
+  avatarSquare: { borderRadius: radii.medium, width: 160, height: 160 },
+  avatarEditButton: { position: 'absolute', bottom: 8, right: 8, backgroundColor: brandColors.white, borderRadius: radii.medium, padding: 8, borderWidth: 1, borderColor: brandColors.border },
+  avatarEditButtonDisabled: { opacity: 0.6, backgroundColor: brandColors.surfaceSecondary },
   uploadingIndicator: { 
     alignItems: 'center', 
     justifyContent: 'center',
@@ -1560,45 +1553,39 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radii.medium,
+    ...shadows.card,
+    gap: spacing.sm,
   },
   toastSuccess: {
-    backgroundColor: '#059669',
+    backgroundColor: semanticColors.success,
   },
   toastError: {
-    backgroundColor: '#ef4444',
+    backgroundColor: semanticColors.error,
   },
   toastText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '500',
+    color: brandColors.white,
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontSize: typography.bodyMedium.fontSize,
     flex: 1,
   },
 
-  name: { 
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    color: '#111827',
+  name: {
+    fontFamily: typography.screenTitle.fontFamily,
+    fontSize: 20,
+    color: brandColors.textPrimary,
     flex: 0,
     marginRight: 0,
     marginBottom: 0,
     lineHeight: 20
   },
-  username: { 
-    color: '#6b7280', 
-    fontSize: 13, 
-    marginBottom: 2, 
+  username: {
+    color: brandColors.textSecondary,
+    fontFamily: typography.caption.fontFamily,
+    fontSize: 13,
+    marginBottom: 2,
     marginTop: 0,
     lineHeight: 13,
     paddingTop: 0,
@@ -1606,46 +1593,38 @@ const styles = StyleSheet.create({
   },
   badgesRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
   badgeRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 0 },
-  badge: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, marginRight: 4 },
-  bio: { color: '#374151', fontSize: 13, marginTop: 8, marginBottom: 8 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
-  infoText: { color: '#6b7280', fontSize: 12 },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 6, gap: 10 },
-  statCard: { 
-    flex: 1, 
-    backgroundColor: 'white', 
-    borderRadius: 4, 
-    padding: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#e5e7eb'
+  badge: { flexDirection: 'row', alignItems: 'center', borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2, marginRight: 4 },
+  bio: { color: brandColors.textPrimary, fontFamily: typography.body.fontFamily, fontSize: 13, marginTop: spacing.sm, marginBottom: spacing.sm },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.sm },
+  infoText: { color: brandColors.textSecondary, fontFamily: typography.caption.fontFamily, fontSize: 12 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: brandColors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.md },
+  statCard: {
+    flex: 1,
+    padding: spacing.sm,
   },
-  statCardContent: { 
-    alignItems: 'center', 
-    justifyContent: 'center' 
+  statCardContent: {
+    alignItems: 'center',
+    justifyContent: 'center'
   },
-  statIconContainer: { 
-    width: 28, 
-    height: 28, 
-    borderRadius: 4, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginBottom: 4 
+  statIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: radii.small,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4
   },
-  statCardValue: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: '#111827', 
-    marginBottom: 2 
+  statCardValue: {
+    fontFamily: typography.screenTitle.fontFamily,
+    fontSize: 18,
+    color: brandColors.textPrimary,
+    marginBottom: 2
   },
-  statCardLabel: { 
-    fontSize: 11, 
-    color: '#6b7280', 
-    textAlign: 'center' 
+  statCardLabel: {
+    fontFamily: typography.caption.fontFamily,
+    fontSize: 11,
+    color: brandColors.textSecondary,
+    textAlign: 'center'
   },
   statBox: { alignItems: 'center', flex: 1 },
   statValue: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
@@ -1661,22 +1640,12 @@ const styles = StyleSheet.create({
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   navItemActive: { flex: 1, alignItems: 'center', justifyContent: 'center', borderTopWidth: 2, borderTopColor: '#059669' },
   navText: { fontSize: 11, color: '#6b7280', marginTop: 2 },
-  productsSection: { paddingHorizontal: 8, paddingBottom: 16 }, // Réduit de 16 à 8 pour rapprocher des bords
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
-  productCount: { color: '#6b7280', fontSize: 13 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#6b7280', fontSize: 14 },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    backgroundColor: '#f9fafb',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  emptyText: { color: '#6b7280', fontSize: 16, marginTop: 10 },
-  emptySubtext: { color: '#9ca3af', fontSize: 13, marginTop: 4 },
+  productsSection: { paddingHorizontal: spacing.sm, paddingBottom: spacing.lg },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  sectionTitle: { fontFamily: typography.sectionTitle.fontFamily, fontSize: typography.sectionTitle.fontSize, color: brandColors.textPrimary },
+  productCount: { color: brandColors.textSecondary, fontFamily: typography.caption.fontFamily, fontSize: 13 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: spacing.xxl },
+  loadingText: { color: brandColors.textSecondary, fontFamily: typography.body.fontFamily, fontSize: 14 },
   productsGridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1703,18 +1672,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
+    backgroundColor: brandColors.surface,
+    borderRadius: radii.card,
     width: '85%',
     maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.card,
   },
   deleteModalHeader: {
     flexDirection: 'row',
@@ -1723,27 +1685,29 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     paddingHorizontal: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: brandColors.border,
     gap: 12,
   },
   deleteModalTitle: {
+    fontFamily: typography.cardTitle.fontFamily,
     fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
+    color: brandColors.textPrimary,
   },
   deleteModalBody: {
     paddingVertical: 20,
     paddingHorizontal: 24,
   },
   deleteModalText: {
+    fontFamily: typography.body.fontFamily,
     fontSize: 16,
-    color: '#374151',
+    color: brandColors.textPrimary,
     textAlign: 'center',
     marginBottom: 8,
   },
   deleteModalSubtext: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 14,
-    color: '#6b7280',
+    color: brandColors.textSecondary,
     textAlign: 'center',
   },
   deleteModalActions: {
@@ -1756,43 +1720,36 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 8,
+    backgroundColor: brandColors.surfaceSecondary,
+    borderRadius: radii.medium,
     alignItems: 'center',
   },
   deleteModalCancelText: {
+    fontFamily: typography.bodyMedium.fontFamily,
     fontSize: 16,
-    fontWeight: '500',
-    color: '#374151',
+    color: brandColors.textPrimary,
   },
   deleteModalConfirmButton: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#ef4444',
-    borderRadius: 8,
+    backgroundColor: semanticColors.error,
+    borderRadius: radii.medium,
     alignItems: 'center',
   },
   deleteModalConfirmText: {
+    fontFamily: typography.button.fontFamily,
     fontSize: 16,
-    fontWeight: '600',
-    color: 'white',
+    color: brandColors.white,
   },
 
   // Styles pour le menu d'actions
   actionMenuContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
+    backgroundColor: brandColors.surface,
+    borderRadius: radii.card,
     width: '90%',
     maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.card,
     marginTop: 'auto',
     marginBottom: 50,
   },
@@ -1800,18 +1757,19 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     paddingHorizontal: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: brandColors.border,
     alignItems: 'center',
   },
   actionMenuTitle: {
+    fontFamily: typography.cardTitle.fontFamily,
     fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
+    color: brandColors.textPrimary,
     marginBottom: 4,
   },
   actionMenuSubtitle: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 14,
-    color: '#6b7280',
+    color: brandColors.textSecondary,
     textAlign: 'center',
   },
   actionMenuActions: {
@@ -1823,21 +1781,22 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: brandColors.surfaceSecondary,
   },
   actionMenuIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: brandColors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
   },
   actionMenuText: {
+    fontFamily: typography.body.fontFamily,
     fontSize: 16,
-    color: '#374151',
+    color: brandColors.textPrimary,
     flex: 1,
   },
 
-}) 
+})

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   View,
   Text,
@@ -13,13 +13,19 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useNavigation } from '@react-navigation/native'
 import { ProductCard } from '../components/ProductCard'
+import { Logo } from '../components/Logo'
+import { IconButton } from '../components/IconButton'
+import { Card } from '../components/Card'
+import { EmptyState } from '../components/EmptyState'
+import { brandColors, radii, spacing, typography } from '../theme'
 import { Product, Category, Subcategory } from '../types'
 import { RootStackParamList } from '../../App'
 import { StackNavigationProp } from '@react-navigation/stack'
 import { categories, getSubcategories } from '../data/categories'
-import { getFirestore, collection, getDocs, query, where, orderBy, limit, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, doc, getDoc } from 'firebase/firestore'
 import { getProducts, formatProductsLoadError } from '../services/productService'
 import { app } from '../firebaseConfig'
 import { cleanProductImages } from '../utils/imageUtils'
@@ -78,35 +84,12 @@ export const HomeScreen: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-
-  const testFirestoreConnection = async () => {
-    try {
-      const db = getFirestore(app)
-      const productsRef = collection(db, 'products')
-      // Requête simple sans filtres pour voir ce qu'il y a
-      const simpleQuery = query(productsRef, limit(5))
-      const snapshot = await getDocs(simpleQuery)
-      
-      logger.log('🧪 Test simple - Documents totaux:', snapshot.size)
-      snapshot.forEach((doc) => {
-        const data = doc.data()
-        logger.log('🧪 Document exemple:', {
-          id: doc.id,
-          titulo: data.titulo,
-          status: data.status,
-          categoria: data.categoria,
-          hasImages: data.images?.length > 0
-        })
-      })
-    } catch (error: any) {
-      logger.error('🧪 Erreur test Firestore:', error)
-    }
-  }
+  const scrollViewRef = useRef<ScrollView>(null)
+  const scrollOffsetRef = useRef(0)
+  const scrollToTopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     loadProducts()
-    // Test simple pour vérifier s'il y a des données
-    testFirestoreConnection()
   }, [])
 
   useEffect(() => {
@@ -349,10 +332,33 @@ export const HomeScreen: React.FC = () => {
     navigation.navigate('SellScreen' as any)
   }
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     logger.log('🔄 Rafraîchissement des produits...')
     await loadProducts(true)
-  }
+  }, [])
+
+  // Appui sur l'onglet "Inicio" : remonte en haut si on n'y est pas déjà, sinon rafraîchit.
+  useEffect(() => {
+    const unsubscribe = (navigation as any).addListener('tabPress', () => {
+      if (!navigation.isFocused()) return
+      if (scrollOffsetRef.current > 8) {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true })
+
+        if (scrollToTopTimeoutRef.current) clearTimeout(scrollToTopTimeoutRef.current)
+        // Filet de sécurité : garantit qu'on atterrit bien à y=0 même si l'animation
+        // a été interrompue par un reflow (images produits qui finissent de charger).
+        scrollToTopTimeoutRef.current = setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: 0, animated: false })
+        }, 450)
+      } else {
+        onRefresh()
+      }
+    })
+    return () => {
+      unsubscribe()
+      if (scrollToTopTimeoutRef.current) clearTimeout(scrollToTopTimeoutRef.current)
+    }
+  }, [navigation, onRefresh])
 
   const handleCategoryPress = (category: Category) => {
     setSelectedCategory(category.id)
@@ -429,25 +435,25 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+      <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.logo}>RopaNova</Text>
+          <Logo variant="horizontal" size="sm" />
           <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.headerButton}
+            <IconButton
+              name="heart-outline"
+              variant="ghost"
+              color={brandColors.textSecondary}
               onPress={() => navigation.navigate('FavoritesScreen')}
-            >
-              <Ionicons name="heart-outline" size={20} color="#6b7280" />
-            </TouchableOpacity>
+            />
           </View>
         </View>
-        
+
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={16} color="#9ca3af" style={styles.searchIcon} />
+          <Ionicons name="search" size={18} color={brandColors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Buscar artículos..."
@@ -459,50 +465,61 @@ export const HomeScreen: React.FC = () => {
         </View>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.content}
         showsVerticalScrollIndicator={false}
+        onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#059669']} // Android
-            tintColor="#059669" // iOS
+            colors={[brandColors.primaryUI]} // Android
+            tintColor={brandColors.primaryUI} // iOS
             title="Actualizando productos..." // iOS
-            titleColor="#059669" // iOS
+            titleColor={brandColors.primaryUI} // iOS
           />
         }
       >
         {/* Hero Section */}
-        <View style={styles.heroSection}>
+        <LinearGradient
+          colors={[brandColors.primaryUI, brandColors.primaryDark, brandColors.primaryDeep]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          locations={[0, 0.55, 1]}
+          style={styles.heroSection}
+        >
           <Text style={styles.heroTitle}>¡Bienvenido a RopaNova! 🇩🇴</Text>
           <Text style={styles.heroSubtitle}>
             Compra y vende ropa de segunda mano en República Dominicana
           </Text>
-        </View>
+        </LinearGradient>
 
         {/* Category Tabs */}
         <View style={styles.categoriesContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {categories.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.categoryButton,
-                  selectedCategory === category.id && styles.categoryButtonActive,
-                ]}
-                onPress={() => handleCategoryPress(category)}
-              >
-                <Text
-                  style={[
-                    styles.categoryText,
-                    selectedCategory === category.id && styles.categoryTextActive,
-                  ]}
+            {categories.map((category) => {
+              const active = selectedCategory === category.id
+              return (
+                <TouchableOpacity
+                  key={category.id}
+                  style={styles.categoryButton}
+                  onPress={() => handleCategoryPress(category)}
                 >
-                  {category.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <View style={[styles.categoryIconCircle, active && styles.categoryIconCircleActive]}>
+                    <Ionicons
+                      name={(category.icon as keyof typeof Ionicons.glyphMap) || 'grid-outline'}
+                      size={22}
+                      color={active ? brandColors.white : brandColors.textSecondary}
+                    />
+                  </View>
+                  <Text style={[styles.categoryText, active && styles.categoryTextActive]}>
+                    {category.name}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
           </ScrollView>
         </View>
 
@@ -536,26 +553,21 @@ export const HomeScreen: React.FC = () => {
         {/* Quick Filters Section */}
         <View style={styles.quickFiltersSection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {getVisibleQuickFilters().map((filter) => (
-              <TouchableOpacity
-                key={filter.id}
-                style={[
-                  styles.quickFilterChip,
-                  activeQuickFilters.includes(filter.id) && styles.quickFilterChipActive,
-                ]}
-                onPress={() => toggleQuickFilter(filter.id)}
-              >
-                <Text style={styles.quickFilterIcon}>{filter.icon}</Text>
-                <Text
-                  style={[
-                    styles.quickFilterChipText,
-                    activeQuickFilters.includes(filter.id) && styles.quickFilterChipTextActive,
-                  ]}
+            {getVisibleQuickFilters().map((filter) => {
+              const active = activeQuickFilters.includes(filter.id)
+              return (
+                <TouchableOpacity
+                  key={filter.id}
+                  style={[styles.quickFilterChip, active && styles.quickFilterChipActive]}
+                  onPress={() => toggleQuickFilter(filter.id)}
                 >
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text style={styles.quickFilterIcon}>{filter.icon}</Text>
+                  <Text style={[styles.quickFilterChipText, active && styles.quickFilterChipTextActive]}>
+                    {filter.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
           </ScrollView>
         </View>
 
@@ -569,18 +581,17 @@ export const HomeScreen: React.FC = () => {
           </Text>
           {loading ? (
             <View style={styles.loadStateBox}>
-              <ActivityIndicator size="large" color="#059669" />
+              <ActivityIndicator size="large" color={brandColors.primaryUI} />
               <Text style={styles.loadStateText}>Cargando productos...</Text>
             </View>
           ) : loadError ? (
-            <View style={styles.loadStateBox}>
-              <Ionicons name="cloud-offline-outline" size={40} color="#ef4444" />
-              <Text style={styles.loadErrorTitle}>No se pudieron cargar los productos</Text>
-              <Text style={styles.loadErrorMessage}>{loadError}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={() => loadProducts()}>
-                <Text style={styles.retryButtonText}>Reintentar</Text>
-              </TouchableOpacity>
-            </View>
+            <EmptyState
+              icon="cloud-offline-outline"
+              title="No se pudieron cargar los productos"
+              subtitle={loadError}
+              actionLabel="Reintentar"
+              onAction={() => loadProducts()}
+            />
           ) : (
           <FlatList
               data={filteredProducts}
@@ -591,12 +602,11 @@ export const HomeScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
             scrollEnabled={false}
               ListEmptyComponent={() => (
-                <View style={styles.loadStateBox}>
-                  <Text style={{ color: '#6b7280', fontSize: 16 }}>No se encontraron productos</Text>
-                  <Text style={{ color: '#9ca3af', fontSize: 14, marginTop: 4 }}>
-                    Intenta ajustar los filtros
-                  </Text>
-                </View>
+                <EmptyState
+                  icon="search-outline"
+                  title="No se encontraron productos"
+                  subtitle="Intenta ajustar los filtros"
+                />
               )}
           />
           )}
@@ -606,17 +616,17 @@ export const HomeScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
           <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.actionCard} onPress={handleSellPress}>
-              <Ionicons name="add-circle-outline" size={32} color="#059669" />
+            <Card onPress={handleSellPress} style={styles.actionCard}>
+              <Ionicons name="add-circle-outline" size={32} color={brandColors.primaryUI} />
               <Text style={styles.actionTitle}>Vender</Text>
               <Text style={styles.actionSubtitle}>Publica tu artículo</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.actionCard} onPress={handleSearch}>
-              <Ionicons name="search-outline" size={32} color="#059669" />
+            </Card>
+
+            <Card onPress={handleSearch} style={styles.actionCard}>
+              <Ionicons name="search-outline" size={32} color={brandColors.primaryUI} />
               <Text style={styles.actionTitle}>Buscar</Text>
               <Text style={styles.actionSubtitle}>Encuentra lo que buscas</Text>
-            </TouchableOpacity>
+            </Card>
           </View>
         </View>
       </ScrollView>
@@ -627,173 +637,175 @@ export const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: brandColors.background,
   },
   header: {
-    backgroundColor: 'white',
+    backgroundColor: brandColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
+    borderBottomColor: brandColors.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  logo: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#059669',
+    marginBottom: spacing.md,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  headerButton: {
-    padding: 4,
+    gap: spacing.sm,
   },
   searchContainer: {
     position: 'relative',
   },
   searchIcon: {
     position: 'absolute',
-    left: 12,
-    top: 12,
+    left: spacing.md,
+    top: 15,
     zIndex: 1,
   },
   searchInput: {
-    backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
+    backgroundColor: brandColors.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: brandColors.border,
+    borderRadius: radii.medium + 2,
+    height: 48,
     paddingHorizontal: 40,
-    paddingVertical: 12,
-    fontSize: 16,
+    fontFamily: typography.body.fontFamily,
+    fontSize: typography.body.fontSize,
+    color: brandColors.textPrimary,
   },
   content: {
     flex: 1,
   },
   heroSection: {
-    backgroundColor: '#059669',
-    padding: 24,
+    borderRadius: radii.large,
+    overflow: 'hidden',
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.xxl,
   },
   heroTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: 'white',
-    marginBottom: 4,
+    fontFamily: typography.sectionTitle.fontFamily,
+    fontSize: typography.sectionTitle.fontSize,
+    color: brandColors.white,
+    marginBottom: spacing.xs,
   },
   heroSubtitle: {
-    fontSize: 14,
-    color: '#d1fae5',
+    fontFamily: typography.body.fontFamily,
+    fontSize: typography.body.fontSize,
+    color: brandColors.primaryExtraLight,
   },
   categoriesContainer: {
-    backgroundColor: 'white',
+    backgroundColor: brandColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderBottomColor: brandColors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   categoryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: 'white',
+    alignItems: 'center',
+    width: 68,
+    marginRight: spacing.xs,
   },
-  categoryButtonActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+  categoryIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: brandColors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  categoryIconCircleActive: {
+    backgroundColor: brandColors.primaryUI,
   },
   categoryText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
+    fontFamily: typography.caption.fontFamily,
+    fontSize: typography.caption.fontSize,
+    color: brandColors.textSecondary,
+    textAlign: 'center',
   },
   categoryTextActive: {
-    color: 'white',
+    color: brandColors.primaryUI,
+    fontFamily: typography.bodyMedium.fontFamily,
   },
   subcategoriesContainer: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: brandColors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    borderBottomColor: brandColors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   subcategoryButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginRight: 6,
-    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginRight: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: 'white',
+    borderColor: brandColors.border,
+    backgroundColor: brandColors.surface,
   },
   subcategoryButtonActive: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: brandColors.primaryUI,
+    borderColor: brandColors.primaryUI,
   },
   subcategoryText: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 11,
-    color: '#374151',
-    fontWeight: '400',
+    color: brandColors.textSecondary,
   },
   subcategoryTextActive: {
-    color: 'white',
+    color: brandColors.white,
   },
   quickFiltersSection: {
-    backgroundColor: 'white',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: brandColors.surface,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  quickFiltersTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginBottom: 8,
+    borderBottomColor: brandColors.border,
   },
   quickFilterChip: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 8,
-    borderRadius: 16,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    borderRadius: radii.medium,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: 'white',
+    borderColor: brandColors.border,
+    backgroundColor: brandColors.surface,
+    minWidth: 92,
   },
   quickFilterChipActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: brandColors.primaryExtraLight,
+    borderColor: brandColors.primaryUI,
   },
   quickFilterIcon: {
-    fontSize: 12,
-    marginRight: 4,
+    fontSize: 18,
+    marginBottom: 4,
   },
   quickFilterChipText: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 11,
-    color: '#374151',
-    fontWeight: '500',
+    color: brandColors.textSecondary,
+    textAlign: 'center',
   },
   quickFilterChipTextActive: {
-    color: 'white',
+    color: brandColors.primaryUI,
+    fontFamily: typography.bodyMedium.fontFamily,
   },
   section: {
-    padding: 8, // Réduit de 16 à 8 pour rapprocher les cartes du bord
+    padding: spacing.sm,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 16,
+    fontFamily: typography.sectionTitle.fontFamily,
+    fontSize: typography.sectionTitle.fontSize,
+    color: brandColors.textPrimary,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.sm,
   },
   productRow: {
     justifyContent: 'space-between',
@@ -801,69 +813,35 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
   actionCard: {
     flex: 1,
-    backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   actionTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
-    marginTop: 8,
-    marginBottom: 4,
+    fontFamily: typography.cardTitle.fontFamily,
+    fontSize: typography.cardTitle.fontSize,
+    color: brandColors.textPrimary,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   actionSubtitle: {
-    fontSize: 12,
-    color: '#6b7280',
+    fontFamily: typography.caption.fontFamily,
+    fontSize: typography.caption.fontSize,
+    color: brandColors.textSecondary,
     textAlign: 'center',
   },
   loadStateBox: {
-    padding: 24,
+    padding: spacing.xxl,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadStateText: {
-    marginTop: 12,
-    color: '#6b7280',
-    fontSize: 14,
+    marginTop: spacing.md,
+    color: brandColors.textSecondary,
+    fontFamily: typography.body.fontFamily,
+    fontSize: typography.body.fontSize,
   },
-  loadErrorTitle: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  loadErrorMessage: {
-    marginTop: 8,
-    fontSize: 13,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  retryButton: {
-    marginTop: 16,
-    backgroundColor: '#059669',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-}) 
+})

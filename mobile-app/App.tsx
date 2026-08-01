@@ -1,11 +1,16 @@
 
-import React from 'react'
-import { NavigationContainer } from '@react-navigation/native'
+import { useEffect, useRef } from 'react'
+import { View } from 'react-native'
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native'
 import type { NavigatorScreenParams } from '@react-navigation/native'
 import { createStackNavigator } from '@react-navigation/stack'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { useFonts, Montserrat_400Regular, Montserrat_500Medium, Montserrat_600SemiBold, Montserrat_700Bold } from '@expo-google-fonts/montserrat'
+import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue'
+import { Logo } from './src/components/Logo'
+import { brandColors } from './src/theme'
 import { HomeScreen } from './src/screens/HomeScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
 import { SellScreen } from './src/screens/SellScreen'
@@ -34,12 +39,16 @@ import { BuyScreen } from './src/screens/BuyScreen'
 import OrdersScreen from './src/screens/OrdersScreen'
 import OrderDetailScreen from './src/screens/OrderDetailScreen'
 import { FavoritesScreen } from './src/screens/FavoritesScreen'
+import SellerOrderDetailScreen from './src/screens/SellerOrderDetailScreen'
+import SellerStatsScreen from './src/screens/SellerStatsScreen'
+import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen'
 import { useAuth } from './src/contexts/AuthContext'
 import LoginScreen from './src/screens/LoginScreen'
 import RegisterScreen from './src/screens/RegisterScreen'
 import { AuthProvider } from './src/contexts/AuthContext'
 import AccountTypeSelectionScreen from './src/screens/AccountTypeSelectionScreen'
 import { ErrorBoundary } from './src/components/ErrorBoundary'
+import { addNotificationResponseListener } from './src/services/notificationService'
 
 export type TabParamList = {
   Home: undefined
@@ -88,6 +97,9 @@ export type RootStackParamList = {
   Buy: { productId: string; selectedSize?: string; selectedQuantity?: number }
   OrdersScreen: undefined
   OrderDetail: { orderId: string }
+  SellerOrderDetail: { orderId: string }
+  SellerStats: undefined
+  NotificationSettings: undefined
   FavoritesScreen: undefined
 }
 
@@ -107,10 +119,9 @@ function AuthNavigator() {
 
 function SplashScreen() {
   return (
-    <React.Fragment>
-      {/* Simple splash, peut être remplacé par un vrai écran animé */}
-      <></>
-    </React.Fragment>
+    <View style={{ flex: 1, backgroundColor: brandColors.white, alignItems: 'center', justifyContent: 'center' }}>
+      <Logo variant="horizontal" size="lg" tagline />
+    </View>
   );
 }
 
@@ -138,12 +149,12 @@ const TabNavigator = () => {
 
             return <Ionicons name={iconName} size={size} color={color} />
           },
-          tabBarActiveTintColor: '#059669',
-          tabBarInactiveTintColor: '#6b7280',
+          tabBarActiveTintColor: brandColors.primaryUI,
+          tabBarInactiveTintColor: brandColors.textSecondary,
           tabBarStyle: {
-            backgroundColor: 'white',
+            backgroundColor: brandColors.surface,
             borderTopWidth: 1,
-            borderTopColor: '#e5e7eb',
+            borderTopColor: brandColors.border,
             paddingBottom: 8,
             paddingTop: 8,
             height: 60,
@@ -204,11 +215,37 @@ export default function App() {
 
 function MainAppContent() {
   const { isAuthenticated, loading } = useAuth();
+  const [fontsLoaded] = useFonts({
+    Montserrat_400Regular,
+    Montserrat_500Medium,
+    Montserrat_600SemiBold,
+    Montserrat_700Bold,
+    BebasNeue_400Regular,
+  });
+  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
 
-  if (loading) return <SplashScreen />;
+  useEffect(() => {
+    const sub = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string>
+      const nav = navigationRef.current
+      if (!nav) return
+      if (data.type === 'message' && data.conversationId) {
+        nav.navigate('Chat', { conversationId: data.conversationId })
+      } else if (data.type === 'order' && data.orderId) {
+        nav.navigate('SellerOrderDetail', { orderId: data.orderId })
+      } else if (data.type === 'order_status' && data.orderId) {
+        nav.navigate('OrderDetail', { orderId: data.orderId })
+      } else if (data.type === 'wallet') {
+        nav.navigate('Wallet')
+      }
+    })
+    return () => sub.remove()
+  }, [])
+
+  if (loading || !fontsLoaded) return <SplashScreen />;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {isAuthenticated ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="MainTabs" component={TabNavigator} />
@@ -238,6 +275,9 @@ function MainAppContent() {
           <Stack.Screen name="OrdersScreen" component={OrdersScreen} />
           <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
           <Stack.Screen name="FavoritesScreen" component={FavoritesScreen} />
+          <Stack.Screen name="SellerOrderDetail" component={SellerOrderDetailScreen} />
+          <Stack.Screen name="SellerStats" component={SellerStatsScreen} />
+          <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       </Stack.Navigator>
       ) : (
         <AuthNavigator />

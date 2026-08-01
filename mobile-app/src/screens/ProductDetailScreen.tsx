@@ -5,13 +5,15 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Alert,
   Linking,
   Modal,
-  Dimensions,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRoute, useNavigation } from '@react-navigation/native'
 import { StackNavigationProp } from '@react-navigation/stack'
@@ -22,27 +24,11 @@ import { SellerProfileCard } from '../components/SellerProfileCard'
 import { getProduct } from '../services/productService'
 import { Product } from '../types'
 import { formatPrice } from '../utils/formatters'
-import { getFirestore, doc, getDoc, serverTimestamp, writeBatch, increment, runTransaction } from 'firebase/firestore'
+import { getFirestore, doc, getDoc, serverTimestamp, writeBatch, increment, runTransaction, addDoc, collection } from 'firebase/firestore'
 import { app, auth } from '../firebaseConfig'
 import { createConversationIfNeeded } from '../services/chatService'
 
 import { logger } from '../utils/logger'
-// Constantes pour les couleurs
-const colorOptions = [
-  { name: 'Negro', value: 'negro', color: '#000000' },
-  { name: 'Blanco', value: 'blanco', color: '#FFFFFF' },
-  { name: 'Gris', value: 'gris', color: '#808080' },
-  { name: 'Azul', value: 'azul', color: '#0066CC' },
-  { name: 'Azul Marino', value: 'azul-marino', color: '#001f3f' },
-  { name: 'Rojo', value: 'rojo', color: '#FF4136' },
-  { name: 'Rosa', value: 'rosa', color: '#FF69B4' },
-  { name: 'Verde', value: 'verde', color: '#2ECC40' },
-  { name: 'Amarillo', value: 'amarillo', color: '#FFDC00' },
-  { name: 'Naranja', value: 'naranja', color: '#FF851B' },
-  { name: 'Morado', value: 'morado', color: '#B10DC9' },
-  { name: 'Marrón', value: 'marron', color: '#8B4513' },
-]
-
 // Fonction pour obtenir la couleur d'évaluation
 const getConditionColor = (value: number) => {
   if (value >= 9) return '#059669'
@@ -82,7 +68,7 @@ const checkIfFavorited = async (productId: string, userId: string): Promise<bool
     const favoriteDoc = await getDoc(doc(db, 'favorites', `${userId}_${productId}`));
     return favoriteDoc.exists();
   } catch (error) {
-    // logger.error('Erreur lors de la vérification des favoris:', error);
+    // logger.error('Error al verificar los favoritos:', error);
     return false;
   }
 };
@@ -106,9 +92,9 @@ const addToFavorites = async (productId: string, userId: string, product: Produc
     batch.set(doc(db, 'favorites', `${userId}_${productId}`), favoriteData);
     batch.update(doc(db, 'products', productId), { favoriteCount: increment(1) });
     await batch.commit();
-    logger.log('Produit ajouté aux favoris');
+    logger.log('Producto agregado a favoritos');
   } catch (error) {
-    logger.error('Erreur lors de l\'ajout aux favoris:', error);
+    logger.error('Error al agregar a favoritos:', error);
     throw error;
   }
 };
@@ -138,9 +124,9 @@ const removeFromFavorites = async (productId: string, userId: string) => {
         transaction.update(productRef, { favoriteCount: increment(-1) });
       }
     });
-    logger.log('Produit retiré des favoris');
+    logger.log('Producto eliminado de favoritos');
   } catch (error) {
-    logger.error('Erreur lors de la suppression des favoris:', error);
+    logger.error('Error al eliminar de favoritos:', error);
     throw error;
   }
 };
@@ -162,6 +148,10 @@ export const ProductDetailScreen: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [isFavorited, setIsFavorited] = useState(false)
   const [selectedSize, setSelectedSize] = useState<string>('')
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [reportCustomReason, setReportCustomReason] = useState('')
+  const [showReportInput, setShowReportInput] = useState(false)
 
   useEffect(() => {
     loadProduct()
@@ -170,17 +160,17 @@ export const ProductDetailScreen: React.FC = () => {
   const loadProduct = async () => {
     try {
       setLoading(true)
-      logger.log('Chargement du produit avec ID:', productId)
+      logger.log('Cargando producto con ID:', productId)
       
       // Vérification de sécurité pour productId
       if (!productId || typeof productId !== 'string' || productId.trim() === '') {
-        logger.error('❌ ProductDetailScreen - productId invalide:', productId);
+        logger.error('❌ ProductDetailScreen - productId inválido:', productId);
         setLoading(false);
         return;
       }
       
       const data = await getProduct(productId)
-      logger.log('Données du produit récupérées:', data)
+      logger.log('Datos del producto obtenidos:', data)
       if (data) {
         setProduct(data)
         
@@ -196,11 +186,11 @@ export const ProductDetailScreen: React.FC = () => {
           setIsFavorited(favorited)
         }
       } else {
-        logger.log('Aucune donnée récupérée pour le produit')
+        logger.log('No se obtuvieron datos para el producto')
       }
     } catch (error) {
-      logger.error('Erreur lors du chargement du produit:', error)
-      Alert.alert('Erreur', 'Impossible de charger le produit')
+      logger.error('Error al cargar el producto:', error)
+      Alert.alert('Error', 'No se pudo cargar el producto')
     } finally {
       setLoading(false)
     }
@@ -209,7 +199,7 @@ export const ProductDetailScreen: React.FC = () => {
   const handleToggleFavorite = async () => {
     const user = auth.currentUser
     if (!user) {
-      Alert.alert('Connexion requise', 'Veuillez vous connecter pour ajouter aux favoris')
+      Alert.alert('Inicio de sesión requerido', 'Inicia sesión para agregar a favoritos')
       return
     }
 
@@ -240,7 +230,7 @@ export const ProductDetailScreen: React.FC = () => {
         }
       }
     } catch (error) {
-      Alert.alert('Erreur', 'Impossible de modifier les favoris')
+      Alert.alert('Error', 'No se pudo actualizar tus favoritos')
     }
   }
 
@@ -255,12 +245,12 @@ export const ProductDetailScreen: React.FC = () => {
   const handleContactSeller = async () => {
     const user = auth.currentUser
     if (!user) {
-      Alert.alert('Connexion requise', 'Veuillez vous connecter pour contacter le vendeur')
+      Alert.alert('Inicio de sesión requerido', 'Inicia sesión para contactar al vendedor')
       return
     }
 
     if (!product?.seller?.id) {
-      Alert.alert('Erreur', 'Impossible de contacter le vendeur')
+      Alert.alert('Error', 'No se pudo contactar al vendedor')
       return
     }
 
@@ -286,8 +276,8 @@ export const ProductDetailScreen: React.FC = () => {
         }
       })
     } catch (error) {
-      logger.error('Erreur lors de la navigation vers le chat:', error)
-      Alert.alert('Erreur', 'Impossible d\'ouvrir le chat')
+      logger.error('Error al navegar al chat:', error)
+      Alert.alert('Error', 'No se pudo abrir el chat')
     }
   }
 
@@ -310,11 +300,64 @@ export const ProductDetailScreen: React.FC = () => {
         selectedQuantity: 1
       })
     } else {
-      Alert.alert('Erreur', 'Aucune taille disponible pour ce produit')
+      Alert.alert('Error', 'No hay tallas disponibles para este producto')
     }
   }
 
 
+
+  const isOwnProduct = auth.currentUser?.uid === product?.seller?.id
+
+  const REPORT_REASONS = [
+    'Producto falso o engañoso',
+    'Precio incorrecto o sospechoso',
+    'Fotos inapropiadas',
+    'Vendedor fraudulento',
+    'Contenido prohibido',
+    'Otro',
+  ]
+
+  const handleOpenReport = () => {
+    const user = auth.currentUser
+    if (!user) {
+      Alert.alert('Inicio de sesión requerido', 'Inicia sesión para reportar este anuncio.')
+      return
+    }
+    if (isOwnProduct) {
+      Alert.alert('No permitido', 'No puedes reportar tu propio anuncio.')
+      return
+    }
+    setReportCustomReason('')
+    setShowReportInput(false)
+    setShowReportModal(true)
+  }
+
+  const handleReport = async (reason: string) => {
+    const user = auth.currentUser
+    if (!user || !product) return
+    setReportSubmitting(true)
+    try {
+      const db = getFirestore(app)
+      await addDoc(collection(db, 'reports'), {
+        productId,
+        productTitle: product.title,
+        sellerId: product.seller?.id ?? null,
+        reporterId: user.uid,
+        reason,
+        createdAt: serverTimestamp(),
+      })
+      setShowReportModal(false)
+      Alert.alert(
+        'Reporte enviado',
+        'Gracias por ayudarnos a mantener RopaNova seguro. Revisaremos tu reporte a la brevedad.',
+      )
+    } catch (error) {
+      logger.error('Error al enviar reporte:', error)
+      Alert.alert('Error', 'No se pudo enviar el reporte. Intenta de nuevo.')
+    } finally {
+      setReportSubmitting(false)
+    }
+  }
 
   const handleViewSellerProfile = () => {
     const sellerId = product?.seller?.id
@@ -358,9 +401,11 @@ export const ProductDetailScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton}>
-            <Ionicons name="flag-outline" size={20} color="white" />
-          </TouchableOpacity>
+          {!isOwnProduct && (
+            <TouchableOpacity style={styles.headerButton} onPress={handleOpenReport}>
+              <Ionicons name="flag-outline" size={20} color="white" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -808,6 +853,100 @@ export const ProductDetailScreen: React.FC = () => {
       </View>
 
 
+      {/* Modal de reporte */}
+      <Modal
+        visible={showReportModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReportModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            <TouchableOpacity
+              style={styles.reportOverlay}
+              activeOpacity={1}
+              onPress={() => setShowReportModal(false)}
+            />
+          <View style={styles.reportSheet}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={styles.reportHandle} />
+            {showReportInput ? (
+              <>
+                <TouchableOpacity
+                  style={styles.reportBackRow}
+                  onPress={() => { setShowReportInput(false); setReportCustomReason('') }}
+                >
+                  <Ionicons name="arrow-back" size={18} color="#6b7280" />
+                  <Text style={styles.reportBackText}>Volver</Text>
+                </TouchableOpacity>
+                <Text style={styles.reportTitle}>Otro motivo</Text>
+                <Text style={styles.reportSubtitle}>Describe brevemente el problema con este anuncio.</Text>
+                <TextInput
+                  style={styles.reportTextInput}
+                  value={reportCustomReason}
+                  onChangeText={setReportCustomReason}
+                  placeholder="Escribe aquí el motivo..."
+                  placeholderTextColor="#9ca3af"
+                  multiline
+                  numberOfLines={4}
+                  maxLength={300}
+                  autoFocus
+                />
+                <Text style={styles.reportCharCount}>{reportCustomReason.length}/300</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.reportSubmitButton,
+                    (!reportCustomReason.trim() || reportSubmitting) && styles.reportSubmitButtonDisabled,
+                  ]}
+                  onPress={() => handleReport(reportCustomReason.trim())}
+                  disabled={!reportCustomReason.trim() || reportSubmitting}
+                >
+                  <Text style={styles.reportSubmitText}>
+                    {reportSubmitting ? 'Enviando...' : 'Enviar reporte'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.reportTitle}>Reportar anuncio</Text>
+                <Text style={styles.reportSubtitle}>¿Por qué quieres reportar este anuncio?</Text>
+                {REPORT_REASONS.map((reason) => (
+                  <TouchableOpacity
+                    key={reason}
+                    style={styles.reportOption}
+                    onPress={() => {
+                      if (reason === 'Otro') {
+                        setShowReportInput(true)
+                      } else {
+                        handleReport(reason)
+                      }
+                    }}
+                    disabled={reportSubmitting}
+                  >
+                    <Text style={styles.reportOptionText}>{reason}</Text>
+                    <Ionicons
+                      name={reason === 'Otro' ? 'create-outline' : 'chevron-forward'}
+                      size={18}
+                      color="#9ca3af"
+                    />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.reportCancelButton}
+              onPress={() => setShowReportModal(false)}
+            >
+              <Text style={styles.reportCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1550,6 +1689,103 @@ const styles = StyleSheet.create({
   },
   confirmButtonText: {
     fontSize: 16,
+    fontWeight: '700',
+    color: 'white',
+  },
+  // Styles pour le Modal de report
+  reportOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  reportSheet: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    paddingTop: 12,
+  },
+  reportHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  reportTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  reportSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 16,
+  },
+  reportOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  reportOptionText: {
+    fontSize: 15,
+    color: '#374151',
+  },
+  reportCancelButton: {
+    marginTop: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+  },
+  reportCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  reportBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+  },
+  reportBackText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  reportTextInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    color: '#111827',
+    textAlignVertical: 'top',
+    minHeight: 100,
+    marginBottom: 6,
+  },
+  reportCharCount: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textAlign: 'right',
+    marginBottom: 16,
+  },
+  reportSubmitButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  reportSubmitButtonDisabled: {
+    backgroundColor: '#fca5a5',
+  },
+  reportSubmitText: {
+    fontSize: 15,
     fontWeight: '700',
     color: 'white',
   },

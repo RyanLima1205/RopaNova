@@ -245,6 +245,18 @@ service cloud.firestore {
     }
     
     // ==========================================
+    // COLLECTION: REPORTS
+    // ==========================================
+    match /reports/{reportId} {
+      // Tout utilisateur connecté peut créer un rapport sur un anuncio d'un autre
+      allow create: if isAuthenticated()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.keys().hasAll(['productId', 'reporterId', 'reason', 'createdAt']);
+      // Lecture/modification réservée aux admins via Admin SDK (Cloud Functions)
+      allow read, update, delete: if false;
+    }
+
+    // ==========================================
     // BLOQUER TOUTE AUTRE COLLECTION
     // ==========================================
     match /{document=**} {

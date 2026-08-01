@@ -2,6 +2,7 @@ import { logger } from '../utils/logger'
 import React, { useState } from 'react';
 import { Image, ImageProps, View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { brandColors, radii, typography } from '../theme';
 
 interface SafeImageProps extends Omit<ImageProps, 'source'> {
   uri: string;
@@ -32,7 +33,7 @@ export const SafeImage: React.FC<SafeImageProps> = ({
   if (hasError || !uri || uri === '') {
     return (
       <View style={[styles.fallbackContainer, style]}>
-        <Ionicons name="image-outline" size={40} color="#9ca3af" />
+        <Ionicons name="image-outline" size={40} color={brandColors.textMuted} />
         <Text style={styles.fallbackText}>{fallbackText}</Text>
       </View>
     );
@@ -51,13 +52,14 @@ export const SafeImage: React.FC<SafeImageProps> = ({
 
 const styles = StyleSheet.create({
   fallbackContainer: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: brandColors.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radii.small,
   },
   fallbackText: {
-    color: '#9ca3af',
+    color: brandColors.textMuted,
+    fontFamily: typography.caption.fontFamily,
     fontSize: 12,
     marginTop: 4,
     textAlign: 'center',

@@ -12,7 +12,6 @@ import {
   Image,
   Dimensions,
   Modal,
-  Platform,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useNavigation, useRoute } from '@react-navigation/native'
@@ -20,7 +19,6 @@ import { StackNavigationProp } from '@react-navigation/stack'
 import { RootStackParamList } from '../../App'
 import { logger } from '../utils/logger'
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Ajout des imports Firebase
 import { getFirestore, collection, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { app, auth } from '../firebaseConfig';
@@ -54,11 +52,9 @@ export const SellScreen: React.FC = () => {
     location: '',
     shippingAvailable: false,
     shippingPrice: '',
-    // Condition details
     estadoGeneral: 8,
     estadoTelaMaterial: 8,
     notasSobreElEstado: '',
-    // Additional details
     measurements: {
       chest: '',
       waist: '',
@@ -75,9 +71,9 @@ export const SellScreen: React.FC = () => {
       recogidaEnPersona: false,
       envioADomicilio: false,
     },
-    ciudadRecogidaEnPersona: '', // Added for Recogida en persona city
+    ciudadRecogidaEnPersona: '',
     ciudadesParaEnvioADomicilio: [] as { ciudad: string; precio: string }[],
-    instruccionesParaEntrega: '', // Added for delivery instructions
+    instruccionesParaEntrega: '',
   })
 
   const [brandQuery, setBrandQuery] = useState('');
@@ -88,7 +84,7 @@ export const SellScreen: React.FC = () => {
   const [showSizeModal, setShowSizeModal] = useState(false);
   const [triedSubmit, setTriedSubmit] = useState(false);
 
-  // État pour afficher les info-bulles
+  // Estado para mostrar los tooltips informativos
   const [showTallaInfo, setShowTallaInfo] = useState(false);
   const [showEntregaInfo, setShowEntregaInfo] = useState(false);
   const [showColorInfo, setShowColorInfo] = useState(false);
@@ -96,14 +92,12 @@ export const SellScreen: React.FC = () => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Charger les données du produit en mode édition
   useEffect(() => {
     if (editMode && productData) {
       setIsEditing(true);
-      
-      logger.log('Chargement des données du produit pour édition:', productData);
-      
-      // Récupérer les données originales depuis Firestore si on a un productId
+
+      logger.log('Cargando datos del producto para edición:', productData);
+
       const loadOriginalData = async () => {
         if (productId) {
           try {
@@ -113,9 +107,8 @@ export const SellScreen: React.FC = () => {
             
             if (productSnap.exists()) {
               const originalData = productSnap.data();
-              logger.log('Données originales récupérées:', originalData);
+              logger.log('Datos originales obtenidos:', originalData);
               
-              // Utiliser les données originales pour une conversion plus précise
               const convertedData = {
                 titulo: originalData.titulo || '',
                 descripcion: originalData.descripcion || '',
@@ -158,12 +151,11 @@ export const SellScreen: React.FC = () => {
                 instruccionesParaEntrega: originalData.instruccionesParaEntrega || '',
               };
               
-              logger.log('Données converties pour le formulaire:', convertedData);
+              logger.log('Datos convertidos para el formulario:', convertedData);
               setFormData(convertedData);
               setSelectedImages(originalData.images || []);
             } else {
-              // Fallback aux données passées si pas de données originales
-              logger.log('Pas de données originales, utilisation des données passées');
+              logger.log('Sin datos originales, usando los datos recibidos');
               const convertedData = {
                 titulo: productData.title || productData.titulo || '',
                 descripcion: productData.description || productData.descripcion || '',
@@ -206,13 +198,12 @@ export const SellScreen: React.FC = () => {
                 instruccionesParaEntrega: productData.instruccionesParaEntrega || '',
               };
               
-              logger.log('Données converties pour le formulaire:', convertedData);
+              logger.log('Datos convertidos para el formulario:', convertedData);
               setFormData(convertedData);
               setSelectedImages(productData.images || []);
             }
           } catch (error) {
-            logger.error('Erreur lors du chargement des données originales:', error);
-            // Fallback aux données passées en cas d'erreur
+            logger.error('Error al cargar los datos originales:', error);
             const convertedData = {
               titulo: productData.title || productData.titulo || '',
               descripcion: productData.description || productData.descripcion || '',
@@ -255,12 +246,11 @@ export const SellScreen: React.FC = () => {
               instruccionesParaEntrega: productData.instruccionesParaEntrega || '',
             };
             
-            logger.log('Données converties pour le formulaire (fallback):', convertedData);
+            logger.log('Datos convertidos para el formulario (fallback):', convertedData);
             setFormData(convertedData);
             setSelectedImages(productData.images || []);
           }
         } else {
-          // Pas de productId, utiliser les données passées
           const convertedData = {
             titulo: productData.title || productData.titulo || '',
             descripcion: productData.description || productData.descripcion || '',
@@ -303,7 +293,7 @@ export const SellScreen: React.FC = () => {
             instruccionesParaEntrega: productData.instruccionesParaEntrega || '',
           };
           
-          logger.log('Données converties pour le formulaire:', convertedData);
+          logger.log('Datos convertidos para el formulario:', convertedData);
           setFormData(convertedData);
           setSelectedImages(productData.images || []);
         }
@@ -357,22 +347,20 @@ export const SellScreen: React.FC = () => {
   ]
 
   const handleImageUpload = async () => {
-    // Demande la permission
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission requise', 'Autorise l’accès à la galerie pour ajouter des photos.');
+      Alert.alert('Permiso requerido', 'Permite el acceso a la galería para agregar fotos.');
       return;
     }
-    // Ouvre la galerie
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       quality: 0.8,
-      selectionLimit: 10 - selectedImages.length, // Limite à 10 images au total
+      selectionLimit: 10 - selectedImages.length, // Límite de 10 imágenes en total
     });
 
     if (!result.canceled) {
-      // Pour Expo SDK 49+ (result.assets)
+      // Expo SDK 49+ usa result.assets
       const uris = result.assets ? (result.assets as any[]).map(asset => asset.uri) : [];
       setSelectedImages(prev => [...prev, ...uris].slice(0, 10));
     }
@@ -403,22 +391,12 @@ export const SellScreen: React.FC = () => {
       Alert.alert('Error', 'Por favor completa todos los campos obligatorios')
       return
     }
-    // Validation: au moins un mode de livraison doit être sélectionné
     const hasDelivery = Object.values(formData.tipoDeEntregaPermitida).some(Boolean);
     if (!hasDelivery) {
       Alert.alert('Error', 'Debes seleccionar al menos un tipo de entrega (punto de recogida, recogida en persona o envío a domicilio).');
       return;
     }
-    
-    if (isEditing) {
-      // Mode édition - mettre à jour le produit existant
-      handleUpdateProduct();
-    } else {
-      // Mode création - publier un nouveau produit
-    logger.log('Form data:', formData)
-    logger.log('Images:', selectedImages)
-    Alert.alert('Éxito', '¡Producto publicado exitosamente!')
-    }
+    handleUpdateProduct();
   }
 
   const handleUpdateProduct = async () => {
@@ -429,7 +407,7 @@ export const SellScreen: React.FC = () => {
       const db = getFirestore(app);
       const productRef = doc(db, 'products', productId);
       
-      // Préparer les données mises à jour
+      // Preparar los datos actualizados
       const updatedData = {
         titulo: formData.titulo,
         descripcion: formData.descripcion,
@@ -471,7 +449,7 @@ export const SellScreen: React.FC = () => {
         ]
       );
     } catch (error) {
-      logger.error('Erreur lors de la mise à jour:', error);
+      logger.error('Error al actualizar:', error);
       Alert.alert('Error', 'No se pudieron guardar los cambios. Inténtalo de nuevo.');
     } finally {
       setIsPublishing(false);
@@ -536,7 +514,7 @@ export const SellScreen: React.FC = () => {
     });
   };
 
-  /** Chiffres uniquement ; 0 = champ vide / saisie en cours (corrigé au blur ou à l’enregistrement). */
+  // Solo números; 0 = campo vacío o en proceso de escritura (se corrige al perder foco o al guardar)
   const parseCantidadInput = (text: string): number => {
     const digits = text.replace(/\D/g, '');
     if (digits === '') return 0;
@@ -575,7 +553,6 @@ export const SellScreen: React.FC = () => {
     setTriedSubmit(false);
   };
 
-  /** Onglet Perfil : depuis la stack « SellScreen » ou depuis l’onglet « Sell ». */
   const navigateToOwnProfileTab = () => {
     if (route.name === 'SellScreen') {
       navigation.navigate('MainTabs', { screen: 'Profile' });
@@ -599,9 +576,9 @@ export const SellScreen: React.FC = () => {
     }));
   };
 
-  // 1. Ajout du mapping des tailles par sous-catégorie (aligné avec AdvancedFilters)
+  // Mapa de tallas por subcategoría (alineado con AdvancedFilters)
   const sizeOptions: Record<string, string[]> = {
-    // Vêtements généraux (XS-XXXL)
+    // Ropa general (XS-XXXL)
     'T-shirts': ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única', 'Otra talla'],
     'Camisas': ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única', 'Otra talla'],
     'Blusas': ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única', 'Otra talla'],
@@ -618,26 +595,21 @@ export const SellScreen: React.FC = () => {
     'Abrigos': ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única', 'Otra talla'],
     'Franelas': ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única', 'Otra talla'],
     
-    // Pantalons (tailles américaines)
+    // Pantalones (tallas americanas)
     'Pantalones': ['26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36', '38', '40', '42', '44', 'Única', 'Otra talla'],
-    
-    // Chaussures adultes (tailles américaines)
+    // Zapatos adultos (tallas americanas)
     'Zapatos': ['5', '5.5', '6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '12.5', '13', 'Única', 'Otra talla'],
-    
-    // Chaussures enfants
+    // Zapatos infantiles
     'Zapatos Infantiles': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'Única', 'Otra talla'],
-    
-    // Vêtements bébé (par mois)
+    // Ropa bebé (por meses)
     'Ropa de Bebé (0-24 meses)': ['0-3M', '3-6M', '6-9M', '9-12M', '12-18M', '18-24M', 'Única', 'Otra talla'],
     'Ropa Bebé': ['0-3M', '3-6M', '6-9M', '9-12M', '12-18M', '18-24M', 'Única', 'Otra talla'],
-    
-    // Vêtements enfants (par âge)
+    // Ropa niños (por edad)
     'Ropa de Niña (2-12 años)': ['2T', '3T', '4T', '5T', '6', '7', '8', '10', '12', '14', '16', 'Única', 'Otra talla'],
     'Ropa de Niño (2-12 años)': ['2T', '3T', '4T', '5T', '6', '7', '8', '10', '12', '14', '16', 'Única', 'Otra talla'],
     'Niña': ['2T', '3T', '4T', '5T', '6', '7', '8', '10', '12', '14', '16', 'Única', 'Otra talla'],
     'Niño': ['2T', '3T', '4T', '5T', '6', '7', '8', '10', '12', '14', '16', 'Única', 'Otra talla'],
-    
-    // Accessoires et articles à taille unique
+    // Accesorios y artículos de talla única
     'Accesorios': ['Única'],
     'Accesorios Infantiles': ['Única'],
     'Gorras': ['Única'],
@@ -646,7 +618,7 @@ export const SellScreen: React.FC = () => {
     'Disfraces': ['Única'],
     'Artículos Deportivos Infantiles': ['Única'],
     
-    // Livres
+    // Libros
     'Universitarios': ['Único'],
     'Novelas Románticas': ['Único'],
     'Negocios': ['Único'],
@@ -667,35 +639,30 @@ export const SellScreen: React.FC = () => {
     'Misterio': ['Único'],
     'Otros': ['Único'],
     
-    // Fallback par défaut
+    // Sin coincidencia, se usarán tallas por defecto (ver getSortedSizes)
   };
 
   const getSortedSizes = (subcategory: string) => {
     const options = sizeOptions[subcategory] || ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única', 'Otra talla'];
-    // Toujours mettre 'Única', 'Único' et 'Otra talla' à la fin
+    // Siempre colocar 'Única', 'Único' y 'Otra talla' al final
     const filtered = options.filter(opt => opt !== 'Única' && opt !== 'Único' && opt !== 'Otra talla');
     const uniqueOptions = options.filter(opt => opt === 'Única' || opt === 'Único');
     return [...filtered, ...uniqueOptions, 'Otra talla'];
   };
 
-  // Modal pour la sélection de la ville de recogida en persona
   const [showInPersonCityModal, setShowInPersonCityModal] = useState(false);
   const inPersonCities = [
     'Santo Domingo', 'Santiago', 'La Romana', 'Puerto Plata', 
     'Punta Cana', 'Barahona', 'San Pedro de Macorís', 'La Vega'
   ];
-  // Ajoute la ville de recogida en persona dans le formData
+  // Agrega la ciudad de recogida en persona al formData
 
   const allCities = [
     'Santo Domingo', 'Santiago', 'La Romana', 'Puerto Plata', 
     'Punta Cana', 'Barahona', 'San Pedro de Macorís', 'La Vega'
   ];
 
-  // Recherche pour filtrer les villes de livraison à domicilio
-  const [citySearch, setCitySearch] = useState('');
-  const filteredCities = allCities.filter(city => city.toLowerCase().includes(citySearch.toLowerCase()));
-
-  // Gérer la sélection/déselection d'une ville pour livraison à domicile
+  // Gestionar la selección/deselección de una ciudad para envío a domicilio
   const toggleDeliveryCity = (ciudad: string) => {
     setFormData(prev => {
       const exists = prev.ciudadesParaEnvioADomicilio.find((c: any) => c.ciudad === ciudad);
@@ -713,7 +680,7 @@ export const SellScreen: React.FC = () => {
     });
   };
 
-  // Gérer la modification du prix pour une ville
+  // Gestionar el cambio de precio para una ciudad de envío
   const setDeliveryCityPrice = (ciudad: string, precio: string) => {
     setFormData(prev => ({
       ...prev,
@@ -723,52 +690,45 @@ export const SellScreen: React.FC = () => {
     }));
   };
 
-  // Champs obligatoires
-  const requiredFields = [
-    { key: 'title', label: 'Título del Producto' },
-    { key: 'price', label: 'Precio de Venta' },
-    // Ajoute d'autres champs si besoin
-  ];
-
-  // Validation globale du formulaire
+  // Validación global del formulario
   const isFormValid = () => {
     const hasDelivery = Object.values(formData.tipoDeEntregaPermitida).some(Boolean);
     if (!formData.titulo || !formData.precio || selectedImages.length === 0 || !hasDelivery) return false;
     return true;
   };
 
-  // Sauvegarde automatique du formulaire
+  // Guardado automático del formulario
   React.useEffect(() => {
     AsyncStorage.setItem('sellFormDraft', JSON.stringify({ ...formData, selectedImages }));
   }, [formData, selectedImages]);
 
-  // Nettoyer les anciennes données au montage du composant
+  // Limpiar los datos antiguos al montar el componente
   React.useEffect(() => {
     (async () => {
       try {
         const draft = await AsyncStorage.getItem('sellFormDraft');
         if (draft) {
           const parsed = JSON.parse(draft);
-          // Si l'ancien draft contient les anciennes clés, on le supprime
+          // Si el borrador antiguo contiene claves obsoletas, eliminarlo
           if (parsed.conditionCleanliness || parsed.conditionColor || parsed.conditionShape || parsed.conditionVerified) {
             await AsyncStorage.removeItem('sellFormDraft');
-            logger.log('Ancien draft supprimé - contient des clés obsolètes');
+            logger.log('Borrador antiguo eliminado: contiene claves obsoletas');
           }
         }
       } catch (error) {
-        logger.log('Erreur lors du nettoyage du draft:', error);
+        logger.log('Error al limpiar el borrador:', error);
       }
     })();
   }, []);
 
-  // Restauration du formulaire au montage (une seule fois)
+  // Restauración del formulario al montar (solo una vez)
   React.useEffect(() => {
     if (draftRestored) return;
     (async () => {
       const draft = await AsyncStorage.getItem('sellFormDraft');
       if (draft) {
         const parsed = JSON.parse(draft);
-        // Nettoyer les anciennes clés qui ne sont plus utilisées
+        // Eliminar las claves antiguas que ya no se usan
         const cleanedData = {
           titulo: parsed.titulo || '',
           descripcion: parsed.descripcion || '',
@@ -804,171 +764,73 @@ export const SellScreen: React.FC = () => {
   const db = getFirestore(app);
   const storage = getStorage(app);
 
-  // Fonction pour uploader une image vers Firebase Storage
+  // Subir una imagen a Firebase Storage
   const uploadImage = async (imageUri: string, imageName: string): Promise<string> => {
     try {
       const uid = auth.currentUser?.uid;
       if (!uid) {
-        throw new Error('Utilisateur non connecté');
+        throw new Error('Usuario no conectado');
       }
 
-      logger.log('Début upload image:', imageUri);
+      logger.log('Iniciando subida de imagen:', imageUri);
       
-      // Vérifier si c'est déjà une URL publique
+      // Verificar si ya es una URL pública (no necesita subirse)
       if (imageUri.startsWith('http') && !imageUri.includes('firebasestorage.googleapis.com')) {
-        logger.log('Image déjà une URL publique:', imageUri);
+        logger.log('La imagen ya es una URL pública:', imageUri);
         return imageUri;
       }
       
-      // Vérifier si c'est une URI locale d'Expo
+      // Verificar si es una URI local de Expo (necesita subirse)
       if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
-        logger.log('URI local détecté, upload vers Firebase Storage...');
+        logger.log('URI local detectado, subiendo a Firebase Storage...');
       } else if (imageUri.startsWith('http') && imageUri.includes('firebasestorage.googleapis.com')) {
-        logger.log('Image déjà dans Firebase Storage:', imageUri);
+        logger.log('La imagen ya está en Firebase Storage:', imageUri);
         return imageUri;
       } else {
-        logger.log('URI d\'image invalide:', imageUri);
-        return 'https://via.placeholder.com/200x200/4ade80/ffffff?text=Invalid+URI';
+        logger.log('URI de imagen inválida:', imageUri);
+        throw new Error('URI de imagen inválida');
       }
       
       const response = await fetch(imageUri);
       if (!response.ok) {
-        throw new Error(`Erreur fetch: ${response.status} ${response.statusText}`);
+        throw new Error(`Error al obtener: ${response.status} ${response.statusText}`);
       }
       
       const blob = await response.blob();
-      logger.log('Blob créé, taille:', blob.size);
+      logger.log('Blob creado, tamaño:', blob.size);
       
       const storageRef = ref(storage, `products/${uid}/${imageName}`);
-      logger.log('Référence storage créée:', storageRef.fullPath);
+      logger.log('Referencia de storage creada:', storageRef.fullPath);
       
       const uploadResult = await uploadBytes(storageRef, blob);
-      logger.log('Upload terminé:', uploadResult);
+      logger.log('Subida completada:', uploadResult);
       
       const downloadURL = await getDownloadURL(storageRef);
-      logger.log('URL de téléchargement obtenue:', downloadURL);
+      logger.log('URL de descarga obtenida:', downloadURL);
       
       return downloadURL;
     } catch (error: any) {
-      logger.error('Erreur détaillée lors de l\'upload de l\'image:', error);
-      logger.error('Type d\'erreur:', typeof error);
-      logger.error('Message d\'erreur:', error.message);
-      logger.error('Code d\'erreur:', error.code);
-      
-      // Si c'est une erreur Firebase Storage, retourner une image de placeholder
-      if (error.code && error.code.includes('storage')) {
-        logger.log('Erreur Firebase Storage détectée, utilisation d\'image de placeholder');
-        return 'https://via.placeholder.com/200x200/4ade80/ffffff?text=Storage+Error';
-      }
+      logger.error('Error detallado al subir la imagen:', error);
+      logger.error('Tipo de error:', typeof error);
+      logger.error('Mensaje de error:', error.message);
+      logger.error('Código de error:', error.code);
       
       throw error;
     }
   };
 
-  // Fonction pour migrer les anciennes images locales vers Firebase Storage
-  const migrerImagesLocales = async (imagesLocales: string[]): Promise<string[]> => {
-    const imagesUrls = [];
-    for (let i = 0; i < imagesLocales.length; i++) {
-      const imageUri = imagesLocales[i];
-      if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
-        try {
-          const imageName = `migrated_${Date.now()}_${i}.jpg`;
-          const imageUrl = await uploadImage(imageUri, imageName);
-          imagesUrls.push(imageUrl);
-          logger.log(`Image ${i + 1} migrée:`, imageUrl);
-        } catch (error) {
-          logger.error(`Erreur migration image ${i}:`, error);
-          imagesUrls.push('https://via.placeholder.com/200x200/4ade80/ffffff?text=Migration+Error');
-        }
-      } else {
-        imagesUrls.push(imageUri); // Garder les URLs existantes
-      }
-    }
-    return imagesUrls;
-  };
-
-  // Fonction de test sans upload d'images
-  async function publierProduitSansImages() {
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert('Erreur', 'Vous devez être connecté pour publier une annonce.');
-      return;
-    }
-    
-    setIsPublishing(true);
-    
-    const produit: any = {};
-    
-    // Utiliser des images de placeholder
-    produit.images = selectedImages.length > 0 
-      ? ['https://via.placeholder.com/200x200/4ade80/ffffff?text=Test+Image']
-      : [];
-    
-    // 2. INFORMACIÓN BÁSICA (Basic Information)
-    produit.titulo = formData.titulo;
-    produit.descripcion = formData.descripcion;
-    produit.categoria = formData.categoria;
-    produit.subcategoria = formData.subcategoria;
-    
-    // 3. EVALUACIÓN DEL ESTADO (Condition Assessment)
-    produit.condicionGeneral = formData.condicionGeneral;
-    produit.autenticidad = formData.autenticidad;
-    produit.estadoGeneral = formData.estadoGeneral;
-    produit.estadoTelaMaterial = formData.estadoTelaMaterial;
-    produit.notasSobreElEstado = formData.notasSobreElEstado;
-    produit.defectosEspecificos = formData.defectosEspecificos;
-    
-    // 4. DETALLES DEL PRODUCTO (Product Details)
-    produit.marca = formData.marca;
-    produit.material = formData.material;
-    produit.color = formData.color;
-    produit.stock = normalizeStockCantidadesForSave(formData.stock);
-    
-    // 5. MEDIDAS (Measurements)
-    produit.measurements = formData.measurements;
-    
-    // 6. PRECIO (Pricing)
-    produit.precio = formData.precio;
-    
-    // 7. UBICACIÓN Y ENVÍO (Location and Shipping)
-    produit.tipoDeEntregaPermitida = formData.tipoDeEntregaPermitida;
-    produit.ciudadRecogidaEnPersona = formData.ciudadRecogidaEnPersona;
-    produit.ciudadesParaEnvioADomicilio = formData.ciudadesParaEnvioADomicilio;
-    produit.instruccionesParaEntrega = formData.instruccionesParaEntrega;
-    produit.location = formData.location;
-    produit.shippingAvailable = formData.shippingAvailable;
-    produit.shippingPrice = formData.shippingPrice;
-    
-    // 8. METADATOS (Metadata)
-    produit.userId = user.uid;
-    produit.createdAt = new Date();
-    
-    logger.log('Produit à sauvegarder (sans images):', produit);
-    
-    try {
-      await addDoc(collection(db, 'products'), produit);
-      setIsPublishing(false);
-      Alert.alert('¡Éxito!', '¡Su Anuncio ha sido publicado exitosamente! (Test sans images)', [
-        { text: 'OK', onPress: dismissPublishSuccessAndGoToProfile },
-      ]);
-    } catch (e: any) {
-      setIsPublishing(false);
-      Alert.alert('Erreur', 'Erreur lors de la publication : ' + (e.message || e));
-    }
-  }
-
   async function publierProduit() {
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert('Erreur', 'Vous devez être connecté pour publier une annonce.');
+      Alert.alert('Error', 'Debes iniciar sesión para publicar un anuncio.');
       return;
     }
     
     setIsPublishing(true);
-    // Créer l'objet dans l'ordre exact souhaité
+    // Crear el objeto en el orden exacto deseado
     const produit: any = {};
     
-    // 1. FOTOS DEL PRODUCTO (Images) - Upload vers Firebase Storage
+    // 1. FOTOS DEL PRODUCTO (Images) - Subida a Firebase Storage
     try {
       const uploadedImageUrls = [];
       for (let i = 0; i < selectedImages.length; i++) {
@@ -976,21 +838,16 @@ export const SellScreen: React.FC = () => {
           const imageName = `product_${Date.now()}_${i}.jpg`;
           const imageUrl = await uploadImage(selectedImages[i], imageName);
           uploadedImageUrls.push(imageUrl);
-          logger.log(`Image ${i + 1} uploadée:`, imageUrl);
+          logger.log(`Imagen ${i + 1} subida:`, imageUrl);
         } catch (imageError) {
-          logger.error(`Erreur upload image ${i}:`, imageError);
-          // Continuer avec les autres images
-          uploadedImageUrls.push('https://via.placeholder.com/200x200/4ade80/ffffff?text=Error+Upload');
+          logger.error(`Error al subir imagen ${i}:`, imageError);
         }
       }
       produit.images = uploadedImageUrls;
-      logger.log('Toutes les images uploadées:', produit.images);
+      logger.log('Todas las imágenes subidas:', produit.images);
     } catch (error) {
-      logger.error('Erreur générale upload images:', error);
-      // Utiliser des images de placeholder si l'upload échoue complètement
-      produit.images = selectedImages.length > 0 
-        ? ['https://via.placeholder.com/200x200/4ade80/ffffff?text=Sin+Imagen']
-        : [];
+      logger.error('Error general al subir imágenes:', error);
+      produit.images = [];
     }
     
     // 2. INFORMACIÓN BÁSICA (Basic Information)
@@ -1032,7 +889,7 @@ export const SellScreen: React.FC = () => {
     produit.userId = user.uid;
     produit.createdAt = new Date();
     
-    logger.log('Produit à sauvegarder dans Firestore:', produit);
+    logger.log('Producto a guardar en Firestore:', produit);
     
     try {
       await addDoc(collection(db, 'products'), produit);
@@ -1042,7 +899,7 @@ export const SellScreen: React.FC = () => {
       ]);
     } catch (e: any) {
       setIsPublishing(false);
-      Alert.alert('Erreur', 'Erreur lors de la publication : ' + (e.message || e));
+      Alert.alert('Error', 'Error al publicar: ' + (e.message || e));
     }
   }
 
@@ -1085,13 +942,13 @@ export const SellScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Fotos del Producto</Text>
           <Text style={styles.sectionSubtitle}>Agrega hasta 10 fotos. La primera será la foto principal.</Text>
-          {/* Affichage de la photo principale */}
+          {/* Vista de la foto principal */}
           {selectedImages[0] && (
             <View style={{ alignItems: 'center', marginBottom: 16 }}>
               <Image source={{ uri: selectedImages[0] }} style={styles.mainImagePreview} />
             </View>
           )}
-          {/* Grille des miniatures (hors photo principale) */}
+          {/* Cuadrícula de miniaturas (excepto la foto principal) */}
           <View style={styles.imageGrid}>
             {selectedImages.slice(1).map((image, index) => (
               <View key={index + 1} style={styles.imageContainer}>
@@ -1102,7 +959,7 @@ export const SellScreen: React.FC = () => {
                 >
                   <Ionicons name="close" size={16} color="white" />
                 </TouchableOpacity>
-                {/* Boutons Monter/Descendre */}
+                {/* Botones Subir/Bajar */}
                 <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 2 }}>
                   <TouchableOpacity
                     onPress={() => {
@@ -1393,7 +1250,7 @@ export const SellScreen: React.FC = () => {
           <View style={styles.row}>
             <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.inputLabel}>Marca *</Text>
-              {/* Champ de recherche de marque avec suggestions et flèche */}
+              {/* Campo de búsqueda de marca con sugerencias y flecha */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <TextInput
                   style={[
@@ -1414,7 +1271,7 @@ export const SellScreen: React.FC = () => {
                   <Ionicons name="chevron-down" size={24} color="#6b7280" />
                 </TouchableOpacity>
               </View>
-              {/* Suggestions de marques */}
+              {/* Sugerencias de marcas */}
               {!showBrandInput && brandQuery.length > 0 && (
                 <View style={styles.suggestionsList}>
                   {filteredBrands.map((brand) => (
@@ -1441,7 +1298,7 @@ export const SellScreen: React.FC = () => {
                   ))}
                 </View>
               )}
-              {/* Champ texte libre si "Otra" est choisi, en dessous */}
+              {/* Campo de texto libre si se elige "Otra", debajo */}
               {showBrandInput && formData.marca === 'Otra' && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
                   <TextInput
@@ -1537,7 +1394,7 @@ export const SellScreen: React.FC = () => {
               const isOtherSize = item.talla && !currentSizeOptions.includes(item.talla);
               return (
                 <View key={index} style={styles.stockItem}>
-                  {/* Colonne taille */}
+                  {/* Columna talla */}
                   <View style={{ flex: 1, marginRight: 8 }}>
                     <Text style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>Talla</Text>
                     <TouchableOpacity
@@ -1550,7 +1407,7 @@ export const SellScreen: React.FC = () => {
                       </Text>
                       <Ionicons name="chevron-down" size={20} color="#6b7280" style={{ marginLeft: 8 }} />
                     </TouchableOpacity>
-                    {/* Champ texte si "Otra talla" sélectionné ou taille personnalisée */}
+                    {/* Campo de texto si se seleccionó "Otra talla" o talla personalizada */}
                     {(item.talla === 'Otra talla' || isOtherSize) && (
                       <TextInput
                         style={[styles.input, { marginTop: 4, minWidth: 60 }]}
@@ -1560,7 +1417,7 @@ export const SellScreen: React.FC = () => {
                       />
                     )}
                   </View>
-                  {/* Colonne quantité */}
+                  {/* Columna cantidad */}
                   <View style={{ width: 80, marginRight: 8 }}>
                     <Text style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>Cantidad</Text>
                     <TextInput
@@ -1592,7 +1449,7 @@ export const SellScreen: React.FC = () => {
                 return `Total en stock: ${total} ${total === 1 ? 'unidad' : 'unidades'}`;
               })()}
             </Text>
-            {/* Modal pour la sélection de taille */}
+            {/* Modal para la selección de talla */}
             <Modal
               visible={showSizeModal}
               transparent={true}
@@ -1602,7 +1459,7 @@ export const SellScreen: React.FC = () => {
               <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSizeModal(false)}>
                 <View style={[styles.modalContent, { maxHeight: 350, justifyContent: 'flex-start' }]}>  
                   <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Sélectionner la taille</Text>
+                    <Text style={styles.modalTitle}>Seleccionar la talla</Text>
                     <TouchableOpacity onPress={() => setShowSizeModal(false)}>
                       <Ionicons name="close" size={24} color="#6b7280" />
                     </TouchableOpacity>
@@ -1641,7 +1498,7 @@ export const SellScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>Medidas (Opcional)</Text>
             <Text style={styles.sectionSubtitle}>Ayuda a los compradores a conocer el ajuste exacto</Text>
             
-            {/* Mesures pour les HAUTS (Vestidos, Camisas, T-shirts, etc.) */}
+            {/* Medidas para partes SUPERIORES (Vestidos, Camisas, T-shirts, etc.) */}
             {['Vestidos', 'Camisas', 'T-shirts', 'Blusas', 'Poloches', 'Abrigos', 'Franelas'].includes(formData.subcategoria) && (
               <>
                 <View style={styles.row}>
@@ -1692,7 +1549,7 @@ export const SellScreen: React.FC = () => {
               </>
             )}
 
-            {/* Mesures pour les BAS (Pantalones, Shorts, Faldas) */}
+            {/* Medidas para partes INFERIORES (Pantalones, Shorts, Faldas) */}
             {['Pantalones', 'Shorts', 'Faldas'].includes(formData.subcategoria) && (
               <>
                 <View style={styles.row}>
@@ -1743,7 +1600,7 @@ export const SellScreen: React.FC = () => {
               </>
             )}
 
-            {/* Mesures pour les VESTIDOS (combine haut et bas) */}
+            {/* Medidas para VESTIDOS (combina superior e inferior) */}
             {formData.subcategoria === 'Vestidos' && (
               <>
                 <View style={styles.row}>
@@ -1838,14 +1695,14 @@ export const SellScreen: React.FC = () => {
         {/* Location and Shipping */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Ubicación y Envío</Text>
-          {/* Message d'erreur si aucun type de livraison n'est sélectionné après tentative de publication */}
+          {/* Mensaje de error si no se selecciona ningún tipo de entrega al intentar publicar */}
           {triedSubmit && !Object.values(formData.tipoDeEntregaPermitida).some(Boolean) && (
             <Text style={{ color: 'red', marginTop: 4, marginBottom: 8, fontSize: 13 }}>
               Debes seleccionar al menos un tipo de entrega.
             </Text>
           )}
           
-          {/* Cases à cocher pour les types de livraison */}
+          {/* Casillas de verificación para los tipos de entrega */}
           <View style={styles.inputGroup}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={styles.inputLabel}>
@@ -1872,7 +1729,7 @@ export const SellScreen: React.FC = () => {
                 </View>
                 <Text style={styles.checkboxLabel}>Recogida en Persona</Text>
               </TouchableOpacity>
-              {/* Dropdown ville pour Recogida en persona */}
+              {/* Selector de ciudad para Recogida en persona */}
               {formData.tipoDeEntregaPermitida.recogidaEnPersona && (
                 <View style={{ marginLeft: 32, marginTop: 4 }}>
                   <Text style={[styles.inputLabel, { fontSize: 13, marginBottom: 4 }]}>Ciudad para Recogida en Persona</Text>
@@ -1923,7 +1780,7 @@ export const SellScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Champ prix d'envoi seulement si Envío a domicilio est coché */}
+          {/* Campo de precio de envío solo si Envío a domicilio está marcado */}
           {formData.tipoDeEntregaPermitida.envioADomicilio && (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Ciudades para Envío a Domicilio</Text>
@@ -1953,7 +1810,7 @@ export const SellScreen: React.FC = () => {
               })}
             </View>
           )}
-          {/* Champ texte pour instructions spéciales */}
+          {/* Campo de texto para instrucciones especiales */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Instrucciones para la entrega (opcional)</Text>
             <TextInput
@@ -2078,7 +1935,7 @@ export const SellScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Modal de sélection complète des marques */}
+      {/* Modal de selección completa de marcas */}
       <Modal
         visible={showBrandModal}
         transparent={true}
@@ -2125,7 +1982,7 @@ export const SellScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Modal para la sélection de la Ciudad de recogida en persona */}
+      {/* Modal para la selección de la ciudad de recogida en persona */}
       <Modal
         visible={showInPersonCityModal}
         transparent={true}

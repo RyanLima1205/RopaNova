@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { View, Text, Image, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, RefreshControl, Alert, Animated } from 'react-native'
 import { PanGestureHandler, State } from 'react-native-gesture-handler'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -6,9 +6,9 @@ import { useNavigation } from '@react-navigation/native'
 import { StackNavigationProp } from '@react-navigation/stack'
 import { Ionicons } from '@expo/vector-icons'
 import { RootStackParamList } from '../../App'
-import { subscribeToConversations, fetchConversationsOnce, Conversation, markAsRead, pinConversation, isConversationPinned } from '../services/chatService'
+import { subscribeToConversations, fetchConversationsOnce, fetchMoreConversations, Conversation, markAsRead, pinConversation, isConversationPinned } from '../services/chatService'
 import { useAuth } from '../contexts/AuthContext'
-import { getFirestore, doc, getDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore'
+import { getFirestore, doc, getDoc, collection, query, where, getDocs, deleteDoc, QueryDocumentSnapshot } from 'firebase/firestore'
 import { app } from '../firebaseConfig'
 import { getUserDocumentAvatarUrl, isValidImageUrl } from '../utils/imageUtils'
 
@@ -58,9 +58,8 @@ export const MessagesScreen: React.FC = () => {
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'recent'>('all')
   const [showFilters, setShowFilters] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMoreData, setHasMoreData] = useState(true)
-  const [page, setPage] = useState(1)
-  const ITEMS_PER_PAGE = 20
+  const [hasMoreData, setHasMoreData] = useState(false)
+  const lastConvDocRef = useRef<QueryDocumentSnapshot | null>(null)
 
   // Fonction pour récupérer les données des participants
   const fetchParticipantsData = useCallback(async (conversation: Conversation): Promise<ConversationWithParticipants> => {
@@ -210,16 +209,17 @@ export const MessagesScreen: React.FC = () => {
     }
     const unsub = subscribeToConversations(
       user.id,
-      async (list) => {
+      async (list, lastDoc, hasMore) => {
         logger.log('💬 MessagesScreen - conversations reçues:', list.length)
         try { logger.log('💬 IDs:', list.map(c => c.id)) } catch {}
-        
-        // Récupérer les données des participants pour chaque conversation
+
         const conversationsWithData = await Promise.all(
           list.map(conv => fetchParticipantsData(conv))
         )
-        
+
         setConversations(conversationsWithData)
+        lastConvDocRef.current = lastDoc
+        setHasMoreData(hasMore)
         setLoading(false)
       },
       (err) => {
@@ -235,9 +235,11 @@ export const MessagesScreen: React.FC = () => {
     if (!user?.id) return
     setRefreshing(true)
     try {
-      const list = await fetchConversationsOnce(user.id)
+      const { conversations: list, lastDoc, hasMore } = await fetchConversationsOnce(user.id)
       const conversationsWithData = await Promise.all(list.map((conv) => fetchParticipantsData(conv)))
       setConversations(conversationsWithData)
+      lastConvDocRef.current = lastDoc
+      setHasMoreData(hasMore)
     } catch (e) {
       logger.error('MessagesScreen refresh:', e)
     } finally {
@@ -245,16 +247,27 @@ export const MessagesScreen: React.FC = () => {
     }
   }, [user?.id, fetchParticipantsData])
 
-  // Fonction de chargement de plus de données
-  const loadMore = useCallback(() => {
-    if (loadingMore || !hasMoreData) return
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMoreData || !lastConvDocRef.current || !user?.id) return
     setLoadingMore(true)
-    // Pour l'instant, on simule le chargement
-    setTimeout(() => {
+    try {
+      const { conversations: more, lastDoc, hasMore } = await fetchMoreConversations(user.id, lastConvDocRef.current)
+      if (more.length > 0) {
+        const moreWithData = await Promise.all(more.map(conv => fetchParticipantsData(conv)))
+        setConversations(prev => {
+          const existingIds = new Set(prev.map(c => c.id))
+          const newOnes = moreWithData.filter(c => !existingIds.has(c.id))
+          return [...prev, ...newOnes]
+        })
+        lastConvDocRef.current = lastDoc
+      }
+      setHasMoreData(hasMore)
+    } catch (e) {
+      logger.error('MessagesScreen loadMore:', e)
+    } finally {
       setLoadingMore(false)
-      setHasMoreData(false) // Pas de pagination réelle pour l'instant
-    }, 1000)
-  }, [loadingMore, hasMoreData])
+    }
+  }, [loadingMore, hasMoreData, user?.id, fetchParticipantsData])
 
   // Fonction de suppression de conversation
   const deleteConversation = useCallback(async (conversationId: string) => {
@@ -508,7 +521,11 @@ export const MessagesScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <Text style={styles.muted}>Acceso denegado a las conversaciones (permisos). Verifica las reglas de Firestore y el campo participantes.</Text>
+          <Ionicons name="wifi-outline" size={48} color="#d1d5db" />
+          <Text style={[styles.muted, { marginTop: 12 }]}>No se pudieron cargar tus conversaciones.</Text>
+          <TouchableOpacity onPress={onRefresh} style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#059669', borderRadius: 8 }}>
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Reintentar</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     )

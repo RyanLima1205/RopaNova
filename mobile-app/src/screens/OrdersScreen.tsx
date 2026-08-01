@@ -20,6 +20,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { fetchOrdersForBuyer, cancelOrderAsBuyer, type BuyerOrder, type OrderStatus } from '../services/orderService';
 import { getStatusInfo, formatOrderCurrency, formatOrderDate } from '../utils/orderStatus';
 import { createConversationIfNeeded } from '../services/chatService';
+import { Header } from '../components/Header';
+import { EmptyState } from '../components/EmptyState';
+import { brandColors, radii, semanticColors, shadows, spacing, typography } from '../theme';
 
 export const OrdersScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<RootStackParamList, 'OrdersScreen'>>();
@@ -102,18 +105,27 @@ export const OrdersScreen: React.FC = () => {
             <Ionicons name={statusInfo.icon as any} size={16} color={statusInfo.color} style={{ marginRight: 4 }} />
             <Text style={{ color: statusInfo.color, fontWeight: 'bold', fontSize: 12 }}>{statusInfo.label}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#9ca3af" style={{ marginLeft: 4 }} />
+          <Ionicons name="chevron-forward" size={18} color={brandColors.textMuted} style={{ marginLeft: 4 }} />
         </View>
         <View style={styles.cardContent}>
-          <Image
-            source={{ uri: order.productImage || 'https://via.placeholder.com/120' }}
-            style={styles.productImg}
-          />
+          {order.productImage ? (
+            <Image source={{ uri: order.productImage }} style={styles.productImg} />
+          ) : (
+            <View style={[styles.productImg, { justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="image-outline" size={28} color={brandColors.textMuted} />
+            </View>
+          )}
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={styles.productTitle}>{titleLine}</Text>
             {detailLine ? <Text style={styles.productDetail}>{detailLine}</Text> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2, marginTop: 4 }}>
-              <Image source={{ uri: order.sellerAvatar || 'https://via.placeholder.com/40' }} style={styles.sellerAvatar} />
+              {order.sellerAvatar ? (
+                <Image source={{ uri: order.sellerAvatar }} style={styles.sellerAvatar} />
+              ) : (
+                <View style={[styles.sellerAvatar, { backgroundColor: brandColors.surfaceSecondary, justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="person" size={12} color={brandColors.textMuted} />
+                </View>
+              )}
               <Text style={styles.sellerName}>{order.sellerName}</Text>
             </View>
             <Text style={styles.shippingHint} numberOfLines={2}>
@@ -161,15 +173,15 @@ export const OrdersScreen: React.FC = () => {
                 );
               }}
             >
-              <Ionicons name="close-circle-outline" size={16} color="#b91c1c" style={{ marginRight: 4 }} />
-              <Text style={[styles.actionText, { color: '#b91c1c' }]}>Cancelar</Text>
+              <Ionicons name="close-circle-outline" size={16} color={semanticColors.error} style={{ marginRight: 4 }} />
+              <Text style={[styles.actionText, { color: semanticColors.error }]}>Cancelar</Text>
             </TouchableOpacity>
           ) : null}
           {order.status === 'delivered' &&
             (order.hasReview || order.reviewId ? (
               <View style={styles.actionBtn}>
-                <Ionicons name="checkmark-circle" size={16} color="#22c55e" style={{ marginRight: 4 }} />
-                <Text style={[styles.actionText, { color: '#16a34a' }]}>Reseña enviada</Text>
+                <Ionicons name="checkmark-circle" size={16} color={semanticColors.success} style={{ marginRight: 4 }} />
+                <Text style={[styles.actionText, { color: semanticColors.success }]}>Reseña enviada</Text>
               </View>
             ) : (
               <TouchableOpacity
@@ -178,13 +190,13 @@ export const OrdersScreen: React.FC = () => {
                 accessibilityRole="button"
                 accessibilityLabel="Dejar reseña"
               >
-                <Ionicons name="star-outline" size={16} color="#fbbf24" style={{ marginRight: 4 }} />
+                <Ionicons name="star-outline" size={16} color={semanticColors.warning} style={{ marginRight: 4 }} />
                 <Text style={styles.actionText}>Reseña</Text>
               </TouchableOpacity>
             ))}
           {order.status === 'shipped' && (
             <TouchableOpacity style={styles.actionBtn} onPress={openDetail}>
-              <Ionicons name="car-outline" size={16} color="#a78bfa" style={{ marginRight: 4 }} />
+              <Ionicons name="car-outline" size={16} color={brandColors.primaryUI} style={{ marginRight: 4 }} />
               <Text style={styles.actionText}>Rastrear</Text>
             </TouchableOpacity>
           )}
@@ -213,12 +225,12 @@ export const OrdersScreen: React.FC = () => {
               }
             }}
           >
-            <Ionicons name="chatbubble-outline" size={16} color="#059669" style={{ marginRight: 4 }} />
+            <Ionicons name="chatbubble-outline" size={16} color={brandColors.primaryUI} style={{ marginRight: 4 }} />
             <Text style={styles.actionText}>Contactar</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={openDetail}>
-            <Ionicons name="document-text-outline" size={16} color="#64748b" style={{ marginRight: 4 }} />
-            <Text style={[styles.actionText, { color: '#64748b' }]}>Detalle</Text>
+            <Ionicons name="document-text-outline" size={16} color={brandColors.textSecondary} style={{ marginRight: 4 }} />
+            <Text style={[styles.actionText, { color: brandColors.textSecondary }]}>Detalle</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -227,43 +239,30 @@ export const OrdersScreen: React.FC = () => {
 
   if (!user?.id || user.id === 'guest') {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn}>
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Mis Pedidos</Text>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-          <Ionicons name="person-outline" size={48} color="#9ca3af" />
-          <Text style={{ marginTop: 12, fontWeight: '600', color: '#111827', textAlign: 'center' }}>
-            Inicia sesión para ver tus pedidos
-          </Text>
-        </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: brandColors.background }}>
+        <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
+        <Header title="Mis Pedidos" onBack={() => navigation.goBack()} />
+        <EmptyState icon="person-outline" title="Inicia sesión para ver tus pedidos" />
       </SafeAreaView>
     );
   }
 
   if (loading && orders.length === 0) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb', justifyContent: 'center', alignItems: 'center' }}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={{ marginTop: 12, color: '#6b7280' }}>Cargando pedidos...</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: brandColors.background, justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
+        <ActivityIndicator size="large" color={brandColors.primaryUI} />
+        <Text style={{ marginTop: 12, color: brandColors.textSecondary, fontFamily: typography.body.fontFamily }}>
+          Cargando pedidos...
+        </Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Mis Pedidos</Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: brandColors.background }}>
+      <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
+      <Header title="Mis Pedidos" onBack={() => navigation.goBack()} />
       <View style={styles.tabsRow}>
         <TouchableOpacity style={[styles.tab, activeTab === 'all' && styles.tabActive]} onPress={() => setActiveTab('all')}>
           <Text style={[styles.tabText, activeTab === 'all' && styles.tabTextActive]}>Todos</Text>
@@ -285,33 +284,32 @@ export const OrdersScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
       {error ? (
-        <View style={{ padding: 16 }}>
-          <Text style={{ color: '#dc2626', textAlign: 'center' }}>{error}</Text>
-          <TouchableOpacity onPress={load} style={{ marginTop: 12, alignSelf: 'center' }}>
-            <Text style={{ color: '#059669', fontWeight: '600' }}>Reintentar</Text>
+        <View style={{ padding: spacing.lg }}>
+          <Text style={{ color: semanticColors.error, textAlign: 'center', fontFamily: typography.body.fontFamily }}>{error}</Text>
+          <TouchableOpacity onPress={load} style={{ marginTop: spacing.md, alignSelf: 'center' }}>
+            <Text style={{ color: brandColors.primaryUI, fontFamily: typography.bodyMedium.fontFamily }}>Reintentar</Text>
           </TouchableOpacity>
         </View>
       ) : null}
       <FlatList
         data={filteredOrders}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 32 }}
         renderItem={({ item }) => <OrderCard order={item} />}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#059669" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brandColors.primaryUI} />}
         ListEmptyComponent={
           !error ? (
-            <View style={{ alignItems: 'center', marginTop: 48 }}>
-              <Ionicons name="cube-outline" size={48} color="#9ca3af" style={{ marginBottom: 12 }} />
-              <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#111827', marginBottom: 4 }}>No hay pedidos</Text>
-              <Text style={{ color: '#6b7280', marginBottom: 16, textAlign: 'center', paddingHorizontal: 24 }}>
-                {activeTab === 'all'
+            <EmptyState
+              icon="cube-outline"
+              title="No hay pedidos"
+              subtitle={
+                activeTab === 'all'
                   ? 'Aún no has realizado ningún pedido'
-                  : `No tienes pedidos ${activeTab === 'active' ? 'activos' : activeTab === 'delivered' ? 'entregados' : 'cancelados'}`}
-              </Text>
-              <TouchableOpacity style={styles.exploreBtn} onPress={() => (navigation as any).navigate('MainTabs', { screen: 'Home' })}>
-                <Text style={styles.exploreBtnText}>Explorar Productos</Text>
-              </TouchableOpacity>
-            </View>
+                  : `No tienes pedidos ${activeTab === 'active' ? 'activos' : activeTab === 'delivered' ? 'entregados' : 'cancelados'}`
+              }
+              actionLabel="Explorar Productos"
+              onAction={() => (navigation as any).navigate('MainTabs', { screen: 'Home' })}
+            />
           ) : null
         }
       />
@@ -320,47 +318,42 @@ export const OrdersScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  headerBtn: { padding: 8, borderRadius: 20, backgroundColor: '#f3f4f6', marginRight: 8 },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
-  tabsRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 12 },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: '#059669' },
-  tabText: { color: '#6b7280', fontWeight: '500', fontSize: 13 },
-  tabTextActive: { color: '#059669' },
-  card: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 16, padding: 14, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 8 },
-  cardTitle: { fontWeight: 'bold', color: '#6b7280', fontSize: 13 },
-  cardDate: { color: '#9ca3af', fontSize: 12 },
-  badge: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  cardContent: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  productImg: { width: 60, height: 60, borderRadius: 8, backgroundColor: '#f3f4f6' },
-  productTitle: { fontWeight: 'bold', color: '#111827', fontSize: 14, marginBottom: 2 },
-  productDetail: { color: '#64748b', fontSize: 12 },
+  tabsRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: brandColors.surface, borderBottomWidth: 1, borderBottomColor: brandColors.border },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: spacing.md },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: brandColors.primaryUI },
+  tabText: { color: brandColors.textSecondary, fontFamily: typography.bodyMedium.fontFamily, fontSize: 13 },
+  tabTextActive: { color: brandColors.primaryUI },
+  card: { backgroundColor: brandColors.surface, borderRadius: radii.card, marginBottom: spacing.lg, padding: spacing.md, borderWidth: 1, borderColor: brandColors.border, ...shadows.card },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.sm, gap: spacing.sm },
+  cardTitle: { fontFamily: typography.bodyMedium.fontFamily, color: brandColors.textSecondary, fontSize: 13 },
+  cardDate: { color: brandColors.textMuted, fontFamily: typography.caption.fontFamily, fontSize: 12 },
+  badge: { flexDirection: 'row', alignItems: 'center', borderRadius: radii.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  cardContent: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.sm },
+  productImg: { width: 60, height: 60, borderRadius: radii.small, backgroundColor: brandColors.surfaceSecondary },
+  productTitle: { fontFamily: typography.cardTitle.fontFamily, color: brandColors.textPrimary, fontSize: 14, marginBottom: 2 },
+  productDetail: { color: brandColors.textSecondary, fontFamily: typography.caption.fontFamily, fontSize: 12 },
   sellerAvatar: { width: 20, height: 20, borderRadius: 10, marginRight: 4 },
-  sellerName: { color: '#6b7280', fontSize: 12 },
-  shippingHint: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
-  price: { color: '#059669', fontWeight: 'bold', fontSize: 15, marginTop: 4 },
-  trackingBox: { backgroundColor: '#f3f4f6', borderRadius: 8, padding: 8, marginBottom: 8 },
-  trackingLabel: { color: '#6b7280', fontSize: 12 },
-  trackingValue: { color: '#111827', fontWeight: 'bold', fontSize: 13 },
-  trackingDelivery: { color: '#059669', fontSize: 12, marginTop: 2 },
-  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0fdf4', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginRight: 8 },
+  sellerName: { color: brandColors.textSecondary, fontFamily: typography.caption.fontFamily, fontSize: 12 },
+  shippingHint: { color: brandColors.textMuted, fontFamily: typography.caption.fontFamily, fontSize: 11, marginTop: 2 },
+  price: { color: brandColors.primaryUI, fontFamily: typography.cardTitle.fontFamily, fontSize: 15, marginTop: spacing.xs },
+  trackingBox: { backgroundColor: brandColors.surfaceSecondary, borderRadius: radii.small, padding: spacing.sm, marginBottom: spacing.sm },
+  trackingLabel: { color: brandColors.textSecondary, fontFamily: typography.caption.fontFamily, fontSize: 12 },
+  trackingValue: { color: brandColors.textPrimary, fontFamily: typography.bodyMedium.fontFamily, fontSize: 13 },
+  trackingDelivery: { color: semanticColors.success, fontFamily: typography.caption.fontFamily, fontSize: 12, marginTop: 2 },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: brandColors.primaryExtraLight, borderRadius: radii.small, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, marginRight: spacing.sm },
   actionBtnDanger: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fef2f2',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
+    backgroundColor: semanticColors.errorBackground,
+    borderRadius: radii.small,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginRight: spacing.sm,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: semanticColors.error,
   },
-  actionText: { color: '#059669', fontWeight: 'bold', fontSize: 13 },
-  exploreBtn: { backgroundColor: '#059669', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 24 },
-  exploreBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  actionText: { color: brandColors.primaryUI, fontFamily: typography.bodyMedium.fontFamily, fontSize: 13 },
 });
 
 export default OrdersScreen;

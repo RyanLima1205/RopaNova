@@ -26,7 +26,7 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ naviga
   const handleContactPrivacy = () => {
     Alert.alert(
       'Contacto de Privacidad',
-      'Email: privacidad@ropanova.com\nOficial de Protección de Datos: dpo@ropanova.com\nTeléfono: +1 (809) 555-0123',
+      'Email: privacidad@ropanova.com\nOficial de Protección de Datos: dpo@ropanova.com',
       [{ text: 'OK' }]
     );
   };
@@ -552,17 +552,6 @@ export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({ naviga
             <View style={styles.contactItem}>
               <Text style={styles.contactLabel}>Oficial de Protección de Datos:</Text>
               <Text style={styles.contactValue}>dpo@ropanova.com</Text>
-            </View>
-            <View style={styles.contactItem}>
-              <Text style={styles.contactLabel}>Dirección:</Text>
-              <Text style={styles.contactValue}>
-                Av. Winston Churchill #25, Piantini{'\n'}
-                Santo Domingo, República Dominicana
-              </Text>
-            </View>
-            <View style={styles.contactItem}>
-              <Text style={styles.contactLabel}>Teléfono:</Text>
-              <Text style={styles.contactValue}>+1 (809) 555-0123</Text>
             </View>
           </View>
           <Text style={styles.contactNote}>

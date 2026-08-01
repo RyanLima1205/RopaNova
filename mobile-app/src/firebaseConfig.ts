@@ -1,6 +1,7 @@
 import { logger } from './utils/logger'
 import { initializeApp, type FirebaseOptions } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeAuth, getReactNativePersistence } from "firebase/auth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const FIREBASE_ENV_KEYS = [
   "EXPO_PUBLIC_FIREBASE_API_KEY",
@@ -82,4 +83,6 @@ const firebaseConfig = resolveFirebaseConfig();
 
 export const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage),
+});

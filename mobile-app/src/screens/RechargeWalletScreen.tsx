@@ -12,55 +12,18 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
+import { auth } from '../firebaseConfig';
+import {
+  getPaymentMethods,
+  getPaymentMethodDisplayName,
+  getPaymentMethodIcon,
+  PaymentMethod,
+} from '../services/paymentService';
 
 type RechargeWalletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'RechargeWallet'>;
-
-// Mock payment methods
-const paymentMethods = [
-  {
-    id: 1,
-    type: "card",
-    name: "Visa terminada en 4532",
-    icon: "card-outline",
-    isDefault: true,
-    processingTime: "Inmediato",
-    fee: 0,
-    maxAmount: 50000,
-  },
-  {
-    id: 2,
-    type: "card",
-    name: "Mastercard terminada en 8901",
-    icon: "card-outline",
-    isDefault: false,
-    processingTime: "Inmediato",
-    fee: 0,
-    maxAmount: 50000,
-  },
-  {
-    id: 3,
-    type: "bank",
-    name: "Banco Popular Dominicano",
-    icon: "business",
-    isDefault: false,
-    processingTime: "1-2 días hábiles",
-    fee: 25,
-    maxAmount: 100000,
-  },
-  {
-    id: 4,
-    type: "mobile",
-    name: "Tigo Money",
-    icon: "phone-portrait",
-    isDefault: false,
-    processingTime: "Inmediato",
-    fee: 15,
-    maxAmount: 25000,
-  },
-];
 
 // Quick amount options
 const quickAmounts = [500, 1000, 2000, 5000, 10000, 15000];
@@ -68,14 +31,34 @@ const quickAmounts = [500, 1000, 2000, 5000, 10000, 15000];
 export const RechargeWalletScreen: React.FC = () => {
   const navigation = useNavigation<RechargeWalletScreenNavigationProp>();
   const [amount, setAmount] = useState("");
-  const [selectedMethod, setSelectedMethod] = useState(1);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [loadingMethods, setLoadingMethods] = useState(true);
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        setLoadingMethods(false);
+        return;
+      }
+      setLoadingMethods(true);
+      getPaymentMethods(uid).then((methods) => {
+        setPaymentMethods(methods);
+        setSelectedMethod((current) => {
+          if (current && methods.some((m) => m.id === current)) return current;
+          return methods.find((m) => m.isDefault)?.id ?? methods[0]?.id ?? null;
+        });
+        setLoadingMethods(false);
+      });
+    }, []),
+  );
+
   const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedMethod);
   const numericAmount = Number.parseFloat(amount) || 0;
-  const fee = selectedPaymentMethod ? selectedPaymentMethod.fee : 0;
-  const totalAmount = numericAmount + fee;
+  const totalAmount = numericAmount;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-DO", {
@@ -101,7 +84,7 @@ export const RechargeWalletScreen: React.FC = () => {
     }, 2000);
   };
 
-  const isValidAmount = numericAmount >= 100 && numericAmount <= (selectedPaymentMethod?.maxAmount || 50000);
+  const isValidAmount = numericAmount >= 100 && numericAmount <= 50000;
 
   const renderConfirmationScreen = () => (
     <View style={styles.container}>
@@ -129,16 +112,6 @@ export const RechargeWalletScreen: React.FC = () => {
           </Text>
 
           <View style={styles.transactionSummary}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Monto recargado:</Text>
-              <Text style={styles.summaryValue}>{formatCurrency(numericAmount)}</Text>
-            </View>
-            {fee > 0 && (
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Comisión:</Text>
-                <Text style={styles.summaryValue}>{formatCurrency(fee)}</Text>
-              </View>
-            )}
             <View style={[styles.summaryRow, styles.summaryTotal]}>
               <Text style={styles.summaryTotalLabel}>Total pagado:</Text>
               <Text style={styles.summaryTotalValue}>{formatCurrency(totalAmount)}</Text>
@@ -202,7 +175,7 @@ export const RechargeWalletScreen: React.FC = () => {
               </View>
               {amount && !isValidAmount && (
                 <Text style={styles.errorText}>
-                  El monto debe estar entre RD$100 y {formatCurrency(selectedPaymentMethod?.maxAmount || 50000)}
+                  El monto debe estar entre RD$100 y {formatCurrency(50000)}
                 </Text>
               )}
             </View>
@@ -229,51 +202,52 @@ export const RechargeWalletScreen: React.FC = () => {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Método de pago</Text>
           <View style={styles.cardContent}>
-            {paymentMethods.map((method) => (
-              <TouchableOpacity
-                key={method.id}
-                style={[
-                  styles.paymentMethodItem,
-                  selectedMethod === method.id && styles.paymentMethodSelected
-                ]}
-                onPress={() => setSelectedMethod(method.id)}
-              >
-                <View style={styles.paymentMethodIcon}>
-                  <Ionicons name={method.icon as any} size={20} color="#6b7280" />
-                </View>
-
-                <View style={styles.paymentMethodContent}>
-                  <View style={styles.paymentMethodHeader}>
-                    <Text style={styles.paymentMethodName}>{method.name}</Text>
-                    {method.isDefault && (
-                      <View style={styles.defaultBadge}>
-                        <Text style={styles.defaultBadgeText}>Predeterminado</Text>
-                      </View>
-                    )}
+            {loadingMethods ? (
+              <ActivityIndicator size="small" color="#059669" />
+            ) : paymentMethods.length === 0 ? (
+              <View style={styles.emptyMethodsState}>
+                <Ionicons name="card-outline" size={40} color="#d1d5db" />
+                <Text style={styles.emptyMethodsTitle}>Aún no tienes métodos de pago</Text>
+                <Text style={styles.emptyMethodsSubtitle}>
+                  Agrega una tarjeta, cuenta bancaria o pago móvil para recargar tu wallet
+                </Text>
+              </View>
+            ) : (
+              paymentMethods.map((method) => (
+                <TouchableOpacity
+                  key={method.id}
+                  style={[
+                    styles.paymentMethodItem,
+                    selectedMethod === method.id && styles.paymentMethodSelected
+                  ]}
+                  onPress={() => setSelectedMethod(method.id)}
+                >
+                  <View style={styles.paymentMethodIcon}>
+                    <Ionicons name={getPaymentMethodIcon(method.type) as any} size={20} color="#6b7280" />
                   </View>
-                  <View style={styles.paymentMethodDetails}>
-                    <View style={styles.paymentMethodDetail}>
-                      <Ionicons name="time" size={12} color="#9ca3af" />
-                      <Text style={styles.paymentMethodDetailText}>{method.processingTime}</Text>
+
+                  <View style={styles.paymentMethodContent}>
+                    <View style={styles.paymentMethodHeader}>
+                      <Text style={styles.paymentMethodName}>{getPaymentMethodDisplayName(method)}</Text>
+                      {method.isDefault && (
+                        <View style={styles.defaultBadge}>
+                          <Text style={styles.defaultBadgeText}>Predeterminado</Text>
+                        </View>
+                      )}
                     </View>
-                    {method.fee > 0 && (
-                      <Text style={styles.paymentMethodDetailText}>
-                        Comisión: {formatCurrency(method.fee)}
-                      </Text>
+                  </View>
+
+                  <View style={[
+                    styles.radioButton,
+                    selectedMethod === method.id && styles.radioButtonSelected
+                  ]}>
+                    {selectedMethod === method.id && (
+                      <View style={styles.radioButtonInner} />
                     )}
                   </View>
-                </View>
-
-                <View style={[
-                  styles.radioButton,
-                  selectedMethod === method.id && styles.radioButtonSelected
-                ]}>
-                  {selectedMethod === method.id && (
-                    <View style={styles.radioButtonInner} />
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              ))
+            )}
 
             <TouchableOpacity
               style={styles.addPaymentMethodButton}
@@ -294,12 +268,6 @@ export const RechargeWalletScreen: React.FC = () => {
                   <Text style={styles.summaryLabel}>Monto a recargar:</Text>
                   <Text style={styles.summaryValue}>{formatCurrency(numericAmount)}</Text>
                 </View>
-                {fee > 0 && (
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Comisión:</Text>
-                    <Text style={styles.summaryValue}>{formatCurrency(fee)}</Text>
-                  </View>
-                )}
                 <View style={[styles.summaryRow, styles.summaryTotal]}>
                   <Text style={styles.summaryTotalLabel}>Total a pagar:</Text>
                   <Text style={styles.summaryTotalValue}>{formatCurrency(totalAmount)}</Text>
@@ -310,7 +278,7 @@ export const RechargeWalletScreen: React.FC = () => {
                 <Ionicons name="shield-checkmark" size={16} color="#059669" />
                 <Text style={styles.securityAlertText}>
                   Tu información está protegida con encriptación SSL de 256 bits. El dinero estará disponible en tu
-                  wallet {selectedPaymentMethod?.processingTime.toLowerCase()}.
+                  wallet usando {selectedPaymentMethod ? getPaymentMethodDisplayName(selectedPaymentMethod) : 'tu método de pago'}.
                 </Text>
               </View>
             </View>
@@ -322,10 +290,10 @@ export const RechargeWalletScreen: React.FC = () => {
           <TouchableOpacity
             style={[
               styles.actionButton,
-              (!amount || !isValidAmount || isProcessing) && styles.actionButtonDisabled
+              (!amount || !isValidAmount || !selectedMethod || isProcessing) && styles.actionButtonDisabled
             ]}
             onPress={handleRecharge}
-            disabled={!amount || !isValidAmount || isProcessing}
+            disabled={!amount || !isValidAmount || !selectedMethod || isProcessing}
           >
             {isProcessing ? (
               <View style={styles.processingContainer}>
@@ -535,6 +503,22 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: '#ffffff',
+  },
+  emptyMethodsState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  emptyMethodsTitle: {
+    color: '#6b7280',
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  emptyMethodsSubtitle: {
+    color: '#9ca3af',
+    marginTop: 4,
+    fontSize: 13,
+    textAlign: 'center',
   },
   addPaymentMethodButton: {
     paddingVertical: 12,

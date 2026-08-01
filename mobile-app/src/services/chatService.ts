@@ -1,4 +1,4 @@
-import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, onSnapshot, query, where, orderBy, limit, increment } from 'firebase/firestore'
+import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, onSnapshot, query, where, orderBy, limit, startAfter, increment, QueryDocumentSnapshot } from 'firebase/firestore'
 import { app } from '../firebaseConfig'
 
 import { logger } from '../utils/logger'
@@ -78,52 +78,44 @@ export async function sendMessage(conversationId: string, senderId: string, payl
   }
 }
 
-export function subscribeToConversations(userId: string, cb: (conversations: Conversation[]) => void, onError?: (e: any) => void) {
+export function subscribeToConversations(
+  userId: string,
+  cb: (conversations: Conversation[], lastDoc: QueryDocumentSnapshot | null, hasMore: boolean) => void,
+  onError?: (e: any) => void,
+) {
   const convCol = collection(db, 'conversations')
   logger.log('🔍 subscribeToConversations - userId:', userId)
 
   const qy = query(
     convCol,
     where('participants', 'array-contains', userId),
+    orderBy('lastAt', 'desc'),
     limit(50),
   )
-  logger.log('🔍 subscribeToConversations - requête (participants array-contains)')
-  
+
   return onSnapshot(qy, (snap) => {
     logger.log('🔍 subscribeToConversations - snapshot reçu, docs:', snap.docs.length)
     const list: Conversation[] = []
     snap.forEach(docSnap => {
       const data = docSnap.data() as any
-      logger.log('🔍 subscribeToConversations - doc:', docSnap.id, 'participants:', data.participants)
-      
-      // Filtrer côté client pour débugger
       if (data.participants && Array.isArray(data.participants) && data.participants.includes(userId)) {
         list.push({ id: docSnap.id, ...data })
-        logger.log('✅ subscribeToConversations - conversation ajoutée:', docSnap.id)
-      } else {
-        logger.log('❌ subscribeToConversations - conversation ignorée:', docSnap.id, 'participants:', data.participants)
       }
     })
-    
-    // Trier côté client
-    list.sort((a, b) => {
-      const aTime = a.lastAt?.toDate?.() || new Date(0)
-      const bTime = b.lastAt?.toDate?.() || new Date(0)
-      return bTime.getTime() - aTime.getTime()
-    })
-    
-    logger.log('🔍 subscribeToConversations - conversations finales:', list.length)
-    cb(list)
+    const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null
+    const hasMore = snap.docs.length === 50
+    logger.log('🔍 subscribeToConversations - conversations finales:', list.length, 'hasMore:', hasMore)
+    cb(list, lastDoc, hasMore)
   }, (error) => {
     logger.log('💥 subscribeToConversations error:', error)
     onError && onError(error)
   })
 }
 
-/** Même requête que l’abonnement temps réel, pour pull-to-refresh explicite. */
-export async function fetchConversationsOnce(userId: string): Promise<Conversation[]> {
+/** Même requête que l'abonnement temps réel, pour pull-to-refresh explicite. */
+export async function fetchConversationsOnce(userId: string): Promise<{ conversations: Conversation[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> {
   const convCol = collection(db, 'conversations')
-  const qy = query(convCol, where('participants', 'array-contains', userId), limit(50))
+  const qy = query(convCol, where('participants', 'array-contains', userId), orderBy('lastAt', 'desc'), limit(50))
   const snap = await getDocs(qy)
   const list: Conversation[] = []
   snap.forEach((docSnap) => {
@@ -132,28 +124,71 @@ export async function fetchConversationsOnce(userId: string): Promise<Conversati
       list.push({ id: docSnap.id, ...data })
     }
   })
-  list.sort((a, b) => {
-    const aTime = a.lastAt?.toDate?.() || new Date(0)
-    const bTime = b.lastAt?.toDate?.() || new Date(0)
-    return bTime.getTime() - aTime.getTime()
-  })
-  return list
+  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null
+  return { conversations: list, lastDoc, hasMore: snap.docs.length === 50 }
 }
 
-export function subscribeToMessages(conversationId: string, cb: (messages: ChatMessage[]) => void, onError?: (e: any) => void) {
+export async function fetchMoreConversations(
+  userId: string,
+  afterDoc: QueryDocumentSnapshot,
+): Promise<{ conversations: Conversation[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> {
+  const convCol = collection(db, 'conversations')
+  const qy = query(
+    convCol,
+    where('participants', 'array-contains', userId),
+    orderBy('lastAt', 'desc'),
+    startAfter(afterDoc),
+    limit(50),
+  )
+  const snap = await getDocs(qy)
+  const list: Conversation[] = []
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() as any
+    if (data.participants && Array.isArray(data.participants) && data.participants.includes(userId)) {
+      list.push({ id: docSnap.id, ...data })
+    }
+  })
+  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null
+  return { conversations: list, lastDoc, hasMore: snap.docs.length === 50 }
+}
+
+const MESSAGES_PAGE_SIZE = 30
+
+export function subscribeToMessages(
+  conversationId: string,
+  cb: (messages: ChatMessage[], oldestDoc: QueryDocumentSnapshot | null) => void,
+  onError?: (e: any) => void,
+) {
   const messagesCol = collection(db, 'conversations', conversationId, 'messages')
-  const qy = query(messagesCol, orderBy('createdAt', 'desc'), limit(30))
+  const qy = query(messagesCol, orderBy('createdAt', 'desc'), limit(MESSAGES_PAGE_SIZE))
   return onSnapshot(qy, (snap) => {
     const list: ChatMessage[] = []
     snap.forEach(docSnap => {
       const data = docSnap.data() as any
       list.push({ id: docSnap.id, ...data })
     })
-    cb(list)
+    const oldestDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null
+    cb(list, oldestDoc)
   }, (error) => {
     logger.log('💥 subscribeToMessages error:', error)
     onError && onError(error)
   })
+}
+
+export async function fetchOlderMessages(
+  conversationId: string,
+  afterDoc: QueryDocumentSnapshot,
+): Promise<{ messages: ChatMessage[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> {
+  const messagesCol = collection(db, 'conversations', conversationId, 'messages')
+  const qy = query(messagesCol, orderBy('createdAt', 'desc'), startAfter(afterDoc), limit(MESSAGES_PAGE_SIZE))
+  const snap = await getDocs(qy)
+  const messages: ChatMessage[] = []
+  snap.forEach(docSnap => {
+    const data = docSnap.data() as any
+    messages.push({ id: docSnap.id, ...data })
+  })
+  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null
+  return { messages, lastDoc, hasMore: snap.docs.length === MESSAGES_PAGE_SIZE }
 }
 
 export async function markAsRead(conversationId: string, userId: string): Promise<void> {

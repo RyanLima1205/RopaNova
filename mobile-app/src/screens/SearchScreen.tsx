@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   View,
   Text,
@@ -16,8 +16,11 @@ import {
 } from 'react-native'
 import Slider from '@react-native-community/slider'
 import { Ionicons } from '@expo/vector-icons'
-import { useNavigation } from '@react-navigation/native'
+import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import { ProductCard } from '../components/ProductCard'
+import { IconButton } from '../components/IconButton'
+import { EmptyState } from '../components/EmptyState'
+import { brandColors, radii, shadows, spacing, typography } from '../theme'
 import { getProducts, formatProductsLoadError } from '../services/productService'
 import { Product, Category, Subcategory } from '../types'
 
@@ -106,9 +109,15 @@ const firestoreProductToProduct = (fp: FirestoreProduct): Product => ({
   seller: fp.seller as Product['seller'],
 })
 
+const PAGE_SIZE = 20
+
 export const SearchScreen: React.FC = () => {
   const navigation = useNavigation<SearchScreenNavigationProp>()
   const { favoriteProductIds } = useFavoriteProductIds()
+
+  const flatListRef = useRef<FlatList>(null)
+  const scrollOffsetRef = useRef(0)
+  const hasFocusedOnceRef = useRef(false)
 
   // États de base
   const [searchQuery, setSearchQuery] = useState('')
@@ -137,10 +146,8 @@ export const SearchScreen: React.FC = () => {
   // États pour le tri et la pagination
   const [selectedSortOption, setSelectedSortOption] = useState<SortOption>(SORT_OPTIONS[0])
   const [showSortModal, setShowSortModal] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [hasMoreData, setHasMoreData] = useState(false) // Commence à false
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [isEndOfList, setIsEndOfList] = useState(false) // Nouvel état pour la fin
   
   // États pour le rafraîchissement
   const [refreshing, setRefreshing] = useState(false)
@@ -454,19 +461,8 @@ export const SearchScreen: React.FC = () => {
 
     logger.log('🔍 SearchScreen - Produits filtrés finaux:', filtered.length)
     setFilteredProducts(filtered)
-    
-    // Gérer la pagination - si moins de 20 produits, c'est la fin
-    const ITEMS_PER_PAGE = 20
-    const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
-    
-    // Si on a moins de 20 produits, c'est la fin
-    if (filtered.length <= ITEMS_PER_PAGE) {
-      setIsEndOfList(true)
-      setHasMoreData(false)
-    } else {
-      setIsEndOfList(false)
-      setHasMoreData(true)
-    }
+    setDisplayCount(PAGE_SIZE)
+    scrollOffsetRef.current = 0
   }, [products, searchQuery, selectedCategory, selectedSubcategory, minPrice, maxPrice, selectedConditions, advancedFilters, selectedSortOption])
 
   // Suggestions désactivées - recherche manuelle uniquement
@@ -546,22 +542,25 @@ export const SearchScreen: React.FC = () => {
   // const handleSaveSearch = async () => { ... }
   // const handleLoadSavedSearch = (savedSearch: any) => { ... }
 
-  // Gestion de la pagination infinie
-  const handleLoadMore = async () => {
-    if (loadingMore || !hasMoreData || isEndOfList) return
+  // Préserver le scroll lors du retour depuis ProductDetail
+  useFocusEffect(
+    useCallback(() => {
+      if (hasFocusedOnceRef.current && scrollOffsetRef.current > 0) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToOffset({ offset: scrollOffsetRef.current, animated: false })
+        }, 50)
+      }
+      hasFocusedOnceRef.current = true
+    }, [])
+  )
 
+  // Gestion de la pagination réelle (client-side)
+  const handleLoadMore = useCallback(() => {
+    if (loadingMore || displayCount >= filteredProducts.length) return
     setLoadingMore(true)
-    
-    // Simuler le chargement de plus de données
-    setTimeout(() => {
-      setCurrentPage(prev => prev + 1)
-      setLoadingMore(false)
-      
-      // Marquer comme fin de liste après le premier "chargement"
-      setIsEndOfList(true)
-      setHasMoreData(false)
-    }, 1000)
-  }
+    setDisplayCount(prev => prev + PAGE_SIZE)
+    setLoadingMore(false)
+  }, [loadingMore, displayCount, filteredProducts.length])
 
   // Gestion du changement de mode d'affichage - DÉSACTIVÉ
   // const toggleViewMode = () => { ... }
@@ -588,10 +587,8 @@ export const SearchScreen: React.FC = () => {
       // Recharger les produits
       await loadProducts(true)
       
-      // Réinitialiser la pagination
-      setCurrentPage(1)
-      setIsEndOfList(false)
-      setHasMoreData(false)
+      setDisplayCount(PAGE_SIZE)
+      scrollOffsetRef.current = 0
       
       // Recharger l'historique
       await loadSearchHistory()
@@ -660,27 +657,25 @@ export const SearchScreen: React.FC = () => {
     )
   }
 
-  // Rendu du footer pour la pagination infinie
+  // Rendu du footer pour la pagination
   const renderFooter = () => {
     if (loadingMore) {
       return (
         <View style={styles.loadingMoreContainer}>
-          <ActivityIndicator size="small" color="#059669" />
+          <ActivityIndicator size="small" color={brandColors.primaryUI} />
           <Text style={styles.loadingMoreText}>Cargando más productos...</Text>
         </View>
       )
     }
-    
-    if (isEndOfList && filteredProducts.length > 0) {
+    if (displayCount >= filteredProducts.length && filteredProducts.length > 0) {
       return (
         <View style={styles.endOfListContainer}>
-          <Ionicons name="checkmark-circle-outline" size={24} color="#059669" />
+          <Ionicons name="checkmark-circle-outline" size={24} color={brandColors.textMuted} />
           <Text style={styles.endOfListText}>No hay más productos</Text>
           <Text style={styles.endOfListSubtext}>Has visto todos los resultados disponibles</Text>
         </View>
       )
     }
-    
     return null
   }
 
@@ -697,7 +692,7 @@ export const SearchScreen: React.FC = () => {
           <View style={styles.sortModalHeader}>
             <Text style={styles.sortModalTitle}>Ordenar por</Text>
             <TouchableOpacity onPress={() => setShowSortModal(false)}>
-              <Ionicons name="close" size={24} color="#374151" />
+              <Ionicons name="close" size={24} color={brandColors.textPrimary} />
             </TouchableOpacity>
           </View>
           
@@ -717,7 +712,7 @@ export const SearchScreen: React.FC = () => {
                 {option.label}
               </Text>
               {selectedSortOption.id === option.id && (
-                <Ionicons name="checkmark" size={20} color="#059669" />
+                <Ionicons name="checkmark" size={20} color={brandColors.primaryUI} />
               )}
             </TouchableOpacity>
           ))}
@@ -728,15 +723,16 @@ export const SearchScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+      <StatusBar barStyle="dark-content" backgroundColor={brandColors.surface} />
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={16} color="#9ca3af" style={styles.searchIcon} />
+          <Ionicons name="search" size={18} color={brandColors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Buscar artículos..."
+            placeholderTextColor={brandColors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
             returnKeyType="search"
@@ -745,43 +741,34 @@ export const SearchScreen: React.FC = () => {
             onBlur={() => setShowSuggestions(false)}
           />
           {searchQuery.trim() ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.clearButton}
               onPress={clearSearch}
             >
-              <Ionicons name="close" size={16} color="#6b7280" />
+              <Ionicons name="close" size={16} color={brandColors.textSecondary} />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.searchButton}
               onPress={handleSearch}
               disabled={isSearching}
             >
               {isSearching ? (
-                <ActivityIndicator size="small" color="#059669" />
+                <ActivityIndicator size="small" color={brandColors.primaryUI} />
               ) : (
-                <Ionicons name="search" size={16} color="#059669" />
+                <Ionicons name="search" size={16} color={brandColors.primaryUI} />
               )}
             </TouchableOpacity>
           )}
         </View>
-        
+
         <View style={styles.headerActions}>
-          {/* Bouton d'actualisation désactivé */}
-          {/* <TouchableOpacity ... > */}
-          
-          {/* Bouton de sauvegarde désactivé */}
-          {/* <TouchableOpacity ... > */}
-          
-          <TouchableOpacity
-            style={styles.headerButton}
+          <IconButton
+            name="options-outline"
+            variant="surface"
+            color={brandColors.textSecondary}
             onPress={() => setShowAdvancedFilters(true)}
-          >
-            <Ionicons name="options-outline" size={20} color="#6b7280" />
-          </TouchableOpacity>
-          
-          {/* Bouton de basculement grille/liste supprimé */}
-          {/* <TouchableOpacity ... > */}
+          />
         </View>
       </View>
 
@@ -983,24 +970,24 @@ export const SearchScreen: React.FC = () => {
 
         {loading ? (
           <View style={styles.loadStateBox}>
-            <ActivityIndicator size="large" color="#059669" />
+            <ActivityIndicator size="large" color={brandColors.primaryUI} />
             <Text style={styles.loadStateText}>Cargando productos...</Text>
           </View>
         ) : loadError ? (
-          <View style={styles.loadStateBox}>
-            <Ionicons name="cloud-offline-outline" size={48} color="#ef4444" />
-            <Text style={styles.loadErrorTitle}>No se pudieron cargar los productos</Text>
-            <Text style={styles.loadErrorMessage}>{loadError}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => loadProducts()}>
-              <Text style={styles.retryButtonText}>Reintentar</Text>
-            </TouchableOpacity>
-          </View>
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="No se pudieron cargar los productos"
+            subtitle={loadError}
+            actionLabel="Reintentar"
+            onAction={() => loadProducts()}
+          />
         ) : filteredProducts.length > 0 ? (
           <FlatList
-            data={filteredProducts}
+            ref={flatListRef}
+            data={filteredProducts.slice(0, displayCount)}
             renderItem={renderProduct}
             keyExtractor={(item) => item.id.toString()}
-            numColumns={2} // Mode grille fixe
+            numColumns={2}
             columnWrapperStyle={styles.productRow}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.productsList}
@@ -1008,25 +995,24 @@ export const SearchScreen: React.FC = () => {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                colors={['#059669']} // Android
-                tintColor="#059669" // iOS
-                title="Actualizando resultados..." // iOS
-                titleColor="#059669" // iOS
+                colors={[brandColors.primaryUI]}
+                tintColor={brandColors.primaryUI}
+                title="Actualizando resultados..."
+                titleColor={brandColors.primaryUI}
               />
             }
+            onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
+            scrollEventThrottle={16}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
             ListFooterComponent={renderFooter}
-            // key={viewMode} // Plus nécessaire - mode grille fixe
           />
         ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="search-outline" size={48} color="#9ca3af" />
-            <Text style={styles.emptyStateTitle}>No se encontraron resultados</Text>
-            <Text style={styles.emptyStateSubtitle}>
-              Intenta ajustar tus filtros o buscar algo diferente
-            </Text>
-          </View>
+          <EmptyState
+            icon="search-outline"
+            title="No se encontraron resultados"
+            subtitle="Intenta ajustar tus filtros o buscar algo diferente"
+          />
         )}
       </View>
 
@@ -1048,17 +1034,17 @@ export const SearchScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: brandColors.background,
   },
   header: {
-    backgroundColor: 'white',
+    backgroundColor: brandColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderBottomColor: brandColors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.md,
   },
   searchContainer: {
     flex: 1,
@@ -1066,18 +1052,20 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     position: 'absolute',
-    left: 12,
-    top: 12,
+    left: spacing.md,
+    top: 17,
     zIndex: 1,
   },
   searchInput: {
-    backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
+    backgroundColor: brandColors.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: brandColors.border,
+    borderRadius: radii.medium + 2,
+    height: 52,
     paddingHorizontal: 40,
-    paddingVertical: 12,
-    fontSize: 16,
+    fontFamily: typography.body.fontFamily,
+    fontSize: typography.body.fontSize,
+    color: brandColors.textPrimary,
     paddingRight: 50, // Espace pour le bouton de recherche
   },
   searchButton: {
@@ -1088,10 +1076,10 @@ const styles = StyleSheet.create({
     width: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 6,
+    backgroundColor: brandColors.surface,
+    borderRadius: radii.small,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: brandColors.border,
   },
   clearButton: {
     position: 'absolute',
@@ -1101,61 +1089,57 @@ const styles = StyleSheet.create({
     width: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    borderRadius: 6,
+    backgroundColor: brandColors.surfaceSecondary,
+    borderRadius: radii.small,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-  },
-  filterButton: {
-    padding: 8,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 8,
+    borderColor: brandColors.border,
   },
   filtersContainer: {
-    backgroundColor: 'white',
+    backgroundColor: brandColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    padding: 16,
+    borderBottomColor: brandColors.border,
+    padding: spacing.lg,
   },
   filterSection: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   filterTitle: {
+    fontFamily: typography.bodyMedium.fontFamily,
     fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    color: brandColors.textPrimary,
+    marginBottom: spacing.sm,
   },
   filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    borderRadius: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: 'white',
+    borderColor: brandColors.border,
+    backgroundColor: brandColors.surface,
   },
   filterChipActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: brandColors.primaryUI,
+    borderColor: brandColors.primaryUI,
   },
   filterChipText: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
+    color: brandColors.textSecondary,
   },
   filterChipTextActive: {
-    color: 'white',
+    color: brandColors.white,
+    fontFamily: typography.bodyMedium.fontFamily,
   },
   clearFiltersButton: {
     alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
   clearFiltersText: {
+    fontFamily: typography.bodyMedium.fontFamily,
     fontSize: 14,
-    color: '#059669',
-    fontWeight: '500',
+    color: brandColors.primaryUI,
   },
   resultsContainer: {
     flex: 1,
@@ -1164,15 +1148,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'white',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: brandColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: brandColors.border,
   },
   resultsCount: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 14,
-    color: '#6b7280',
+    color: brandColors.textSecondary,
   },
   sortButton: {
     flexDirection: 'row',
@@ -1180,132 +1165,74 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   sortText: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 14,
-    color: '#6b7280',
+    color: brandColors.textSecondary,
   },
   productRow: {
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
   },
   productsList: {
     paddingBottom: 20,
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
   loadStateBox: {
     flex: 1,
-    padding: 32,
+    padding: spacing.xxl,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadStateText: {
-    marginTop: 12,
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  loadErrorTitle: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  loadErrorMessage: {
-    marginTop: 8,
-    fontSize: 13,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  retryButton: {
-    marginTop: 16,
-    backgroundColor: '#059669',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    marginTop: spacing.md,
+    color: brandColors.textSecondary,
+    fontFamily: typography.body.fontFamily,
     fontSize: 14,
   },
   categoryIcon: {
     marginLeft: 4,
   },
   subcategoriesSection: {
-    marginTop: 12,
+    marginTop: spacing.md,
   },
   subcategoriesTitle: {
+    fontFamily: typography.bodyMedium.fontFamily,
     fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginBottom: 8,
+    color: brandColors.textSecondary,
+    marginBottom: spacing.sm,
   },
   subcategoryChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginRight: 6,
-    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginRight: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: 'white',
+    borderColor: brandColors.border,
+    backgroundColor: brandColors.surface,
   },
   subcategoryChipActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: brandColors.primaryUI,
+    borderColor: brandColors.primaryUI,
   },
   subcategoryChipText: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 11,
-    color: '#374151',
-    fontWeight: '500',
+    color: brandColors.textSecondary,
   },
   subcategoryChipTextActive: {
-    color: 'white',
-  },
-  subcategoryContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  subcategoryText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#059669',
+    color: brandColors.white,
   },
   priceContainer: {
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   priceRange: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   priceLabel: {
+    fontFamily: typography.bodyMedium.fontFamily,
     fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
+    color: brandColors.textPrimary,
   },
   sliderContainer: {
     position: 'relative',
@@ -1325,14 +1252,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: '#d1d5db',
+    backgroundColor: brandColors.border,
     borderRadius: 2,
   },
   sliderFill: {
     position: 'absolute',
     top: 0,
     height: '100%',
-    backgroundColor: '#059669',
+    backgroundColor: brandColors.primaryUI,
     borderRadius: 2,
   },
   sliderThumb: {
@@ -1340,83 +1267,53 @@ const styles = StyleSheet.create({
     top: -8,
     width: 20,
     height: 20,
-    backgroundColor: '#059669',
+    backgroundColor: brandColors.primaryUI,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  // Nouveaux styles pour les améliorations
-  searchLoading: {
-    position: 'absolute',
-    right: 12,
-    top: 12,
+    borderColor: brandColors.white,
+    ...shadows.card,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  headerButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f3f4f6',
+    gap: spacing.sm,
   },
   resultsInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  saveSearchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#f0fdf4',
-    borderRadius: 6,
-  },
-  saveSearchText: {
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '500',
+    gap: spacing.md,
   },
   resultsActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
   },
   loadingMoreContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 16,
-    gap: 8,
+    paddingVertical: spacing.lg,
+    gap: spacing.sm,
   },
   loadingMoreText: {
+    fontFamily: typography.body.fontFamily,
     fontSize: 14,
-    color: '#6b7280',
+    color: brandColors.textSecondary,
   },
   endOfListContainer: {
     alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 16,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.lg,
   },
   endOfListText: {
+    fontFamily: typography.bodyMedium.fontFamily,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#059669',
-    marginTop: 8,
+    color: brandColors.textSecondary,
+    marginTop: spacing.sm,
   },
   endOfListSubtext: {
+    fontFamily: typography.caption.fontFamily,
     fontSize: 14,
-    color: '#6b7280',
-    marginTop: 4,
+    color: brandColors.textMuted,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
   modalOverlay: {
@@ -1425,43 +1322,44 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sortModal: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: brandColors.surface,
+    borderTopLeftRadius: radii.card,
+    borderTopRightRadius: radii.card,
     paddingBottom: 34, // Safe area
   },
   sortModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: brandColors.border,
   },
   sortModalTitle: {
+    fontFamily: typography.cardTitle.fontFamily,
     fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
+    color: brandColors.textPrimary,
   },
   sortOption: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: brandColors.surfaceSecondary,
   },
   sortOptionSelected: {
-    backgroundColor: '#f0fdf4',
+    backgroundColor: brandColors.primaryExtraLight,
   },
   sortOptionText: {
+    fontFamily: typography.body.fontFamily,
     fontSize: 16,
-    color: '#374151',
+    color: brandColors.textPrimary,
   },
   sortOptionTextSelected: {
-    color: '#059669',
-    fontWeight: '500',
+    color: brandColors.primaryUI,
+    fontFamily: typography.bodyMedium.fontFamily,
   },
-}) 
+})

@@ -27,6 +27,7 @@ import {
 } from '../services/addressService';
 import { Product } from '../types';
 import { auth } from '../firebaseConfig';
+import { getWalletData } from '../services/paymentService';
 import { RootStackParamList } from '../../App';
 import {
   generateShippingOptions,
@@ -58,12 +59,23 @@ export const BuyScreen: React.FC = () => {
   const [selectedDeliveryAddressId, setSelectedDeliveryAddressId] = useState<string | null>(null);
   const [loadingAddresses, setLoadingAddresses] = useState(false);
   const [showSizeModal, setShowSizeModal] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
   /** Quantité par talla (ex: { M: 2, L: 1 }) */
   const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>(() =>
     initialSelectedSize ? { [initialSelectedSize]: 1 } : {},
   );
   /** Copie éditable dans le modal */
   const [modalQuantities, setModalQuantities] = useState<Record<string, number>>({});
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      getWalletData(uid).then((wallet) => {
+        if (wallet) setWalletBalance(wallet.balance);
+      });
+    }, []),
+  );
 
   // Effet pour mettre à jour la méthode de paiement si nécessaire
   useEffect(() => {
@@ -209,40 +221,10 @@ export const BuyScreen: React.FC = () => {
     methods.push({
       id: 'wallet',
       name: 'RopaNova Wallet',
-      description: 'Saldo: RD$375',
+      description: `Saldo: RD$${walletBalance.toLocaleString('es-DO', { minimumFractionDigits: 0 })}`,
       icon: 'wallet-outline',
       available: true,
-      balance: 375,
-    });
-
-    // Apple Pay (iOS)
-    methods.push({
-      id: 'apple_pay',
-      name: 'Apple Pay',
-      description: 'Pago rápido y seguro con Apple Pay',
-      icon: 'logo-apple',
-      available: true,
-      isDigitalWallet: true,
-    });
-
-    // Google Pay (Android)
-    methods.push({
-      id: 'google_pay',
-      name: 'Google Pay',
-      description: 'Pago rápido y seguro con Google Pay',
-      icon: 'logo-google',
-      available: true,
-      isDigitalWallet: true,
-    });
-
-    // PayPal
-    methods.push({
-      id: 'paypal',
-      name: 'PayPal',
-      description: 'Pago seguro con tu cuenta PayPal',
-      icon: 'logo-paypal',
-      available: true,
-      isDigitalWallet: true,
+      balance: walletBalance,
     });
 
     // Transferencia Bancaria (pour comptes vérifiés)
@@ -388,49 +370,6 @@ export const BuyScreen: React.FC = () => {
       Alert.alert(
         'Saldo insuficiente',
         `Tu saldo actual es de ${formatCurrency(selectedPaymentMethod.balance)}. Por favor recarga tu wallet antes de continuar.`
-      );
-      return;
-    }
-
-    // Gestion des paiements digitaux (Apple Pay / Google Pay / PayPal)
-    if (selectedPayment === 'apple_pay' || selectedPayment === 'google_pay' || selectedPayment === 'paypal') {
-      const paymentName = selectedPayment === 'apple_pay' ? 'Apple Pay' : 
-                         selectedPayment === 'google_pay' ? 'Google Pay' : 'PayPal';
-      Alert.alert(
-        'Simulación de pago',
-        `Simulación de pago con ${paymentName}`,
-        [
-          {
-            text: 'Continuar',
-            onPress: async () => {
-              setIsProcessing(true);
-              await new Promise((resolve) => setTimeout(resolve, 2000));
-              try {
-                const code = await persistOrderToFirestore();
-                setConfirmedOrderCode(code);
-                setShowConfirmation(true);
-              } catch (e: unknown) {
-                const msg =
-                  typeof e === 'object' && e !== null && 'message' in e
-                    ? String((e as { message?: string }).message)
-                    : '';
-                if (msg === 'NO_AUTH') {
-                  Alert.alert('Sesión', 'Inicia sesión para completar la compra.');
-                } else if (msg === 'NO_SELLER') {
-                  Alert.alert('Error', 'No se pudo identificar al vendedor de este producto.');
-                } else {
-                  Alert.alert('Error', 'No se pudo registrar el pedido. Inténtalo de nuevo.');
-                }
-              } finally {
-                setIsProcessing(false);
-              }
-            },
-          },
-          {
-            text: 'Cancelar',
-            style: 'cancel'
-          }
-        ]
       );
       return;
     }
@@ -773,13 +712,6 @@ export const BuyScreen: React.FC = () => {
                           <Text style={styles.rechargeButtonText}>Recargar tu Wallet</Text>
                         </TouchableOpacity>
                       )}
-                    </View>
-                  )}
-                  {method.isDigitalWallet && (
-                    <View style={styles.digitalWalletBadge}>
-                      <Text style={styles.digitalWalletText}>
-                        Pago instantáneo
-                      </Text>
                     </View>
                   )}
                   {method.cashOnly && (

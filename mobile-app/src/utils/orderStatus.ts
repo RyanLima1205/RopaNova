@@ -1,4 +1,5 @@
 import type { OrderStatus } from '../services/orderService';
+import { brandColors, semanticColors } from '../theme';
 
 export type OrderStatusVisual = {
   label: string;
@@ -50,17 +51,17 @@ export const ORDER_TIMELINE_STEPS: OrderTimelineStep[] = [
 export function getStatusInfo(status: OrderStatus): OrderStatusVisual {
   switch (status) {
     case 'pending':
-      return { label: 'Pendiente', color: '#facc15', icon: 'cube-outline' };
+      return { label: 'Pendiente', color: semanticColors.warning, icon: 'cube-outline' };
     case 'confirmed':
-      return { label: 'Confirmado', color: '#3b82f6', icon: 'checkmark-circle-outline' };
+      return { label: 'Confirmado', color: brandColors.primaryDark, icon: 'checkmark-circle-outline' };
     case 'shipped':
-      return { label: 'Enviado', color: '#a78bfa', icon: 'car-outline' };
+      return { label: 'Enviado', color: semanticColors.success, icon: 'car-outline' };
     case 'delivered':
-      return { label: 'Entregado', color: '#22c55e', icon: 'checkmark-done-circle-outline' };
+      return { label: 'Entregado', color: semanticColors.success, icon: 'checkmark-done-circle-outline' };
     case 'cancelled':
-      return { label: 'Cancelado', color: '#ef4444', icon: 'close-circle-outline' };
+      return { label: 'Cancelado', color: semanticColors.error, icon: 'close-circle-outline' };
     default:
-      return { label: 'Desconocido', color: '#6b7280', icon: 'cube-outline' };
+      return { label: 'Desconocido', color: brandColors.textSecondary, icon: 'cube-outline' };
   }
 }
 

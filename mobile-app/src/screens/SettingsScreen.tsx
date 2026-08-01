@@ -35,6 +35,12 @@ const configItems = [
     route: 'OrdersScreen',
   },
   {
+    title: 'Notificaciones',
+    description: 'Elige qué alertas quieres recibir',
+    icon: 'notifications-outline',
+    route: 'NotificationSettings',
+  },
+  {
     title: 'Privacidad y Seguridad',
     description: 'Configuración de privacidad y verificación',
     icon: 'shield-checkmark-outline',

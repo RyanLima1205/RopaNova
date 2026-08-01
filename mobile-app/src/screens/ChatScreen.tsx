@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import {
   View,
   Text,
@@ -12,13 +12,14 @@ import {
   Modal,
   Pressable,
   Alert,
+  ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native'
 import { Ionicons } from '@expo/vector-icons'
-import { getFirestore, doc, getDoc } from 'firebase/firestore'
+import { getFirestore, doc, getDoc, QueryDocumentSnapshot } from 'firebase/firestore'
 import { RootStackParamList } from '../../App'
-import { subscribeToMessages, sendMessage, ChatMessage } from '../services/chatService'
+import { subscribeToMessages, fetchOlderMessages, sendMessage, ChatMessage } from '../services/chatService'
 import { useAuth } from '../contexts/AuthContext'
 import { formatPrice } from '../utils/formatters'
 import { getUserDocumentAvatarUrl } from '../utils/imageUtils'
@@ -57,6 +58,11 @@ export const ChatScreen: React.FC = () => {
   const [peerUserId, setPeerUserId] = useState<string | null>(() => productInfo?.sellerId || null)
   const [linkedProductId, setLinkedProductId] = useState<string | null>(() => productInfo?.id || null)
   const [menuVisible, setMenuVisible] = useState(false)
+  const [subscriptionError, setSubscriptionError] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
+  const paginationCursorRef = useRef<QueryDocumentSnapshot | null>(null)
+  const olderMessagesRef = useRef<ChatMessage[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -136,15 +142,50 @@ export const ChatScreen: React.FC = () => {
       return
     }
     
-    const unsub = subscribeToMessages(conversationId, (list) => {
-      logger.log('💬 ChatScreen - messages reçus:', list.length)
-      logger.log('💬 ChatScreen - messages détail:', list)
-      setMessages(list)
+    const unsub = subscribeToMessages(conversationId, (freshMessages, oldestDoc) => {
+      logger.log('💬 ChatScreen - messages reçus:', freshMessages.length)
+      setSubscriptionError(false)
+      // Mise à jour du curseur seulement si on n'a pas encore paginé
+      // (évite d'écraser un curseur déjà avancé par fetchOlderMessages)
+      if (paginationCursorRef.current === null && oldestDoc) {
+        paginationCursorRef.current = oldestDoc
+        setHasOlderMessages(freshMessages.length >= 30)
+      }
+      // Fusionner les nouveaux messages avec les anciens déjà chargés
+      const freshIds = new Set(freshMessages.map(m => m.id))
+      const kept = olderMessagesRef.current.filter(m => !freshIds.has(m.id))
+      setMessages([...freshMessages, ...kept])
     }, (error) => {
       logger.error('💬 ChatScreen - erreur subscription:', error)
+      setSubscriptionError(true)
     })
     return () => { try { unsub && unsub() } catch(e) { logger.log('💬 ChatScreen - erreur unsubscribe:', e) } }
   }, [conversationId, user?.id])
+
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlder || !hasOlderMessages || !paginationCursorRef.current) return
+    setLoadingOlder(true)
+    try {
+      const { messages: older, lastDoc, hasMore } = await fetchOlderMessages(
+        conversationId,
+        paginationCursorRef.current,
+      )
+      if (older.length > 0) {
+        olderMessagesRef.current = [...olderMessagesRef.current, ...older]
+        paginationCursorRef.current = lastDoc
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id))
+          const newOnes = older.filter(m => !existingIds.has(m.id))
+          return [...prev, ...newOnes]
+        })
+      }
+      setHasOlderMessages(hasMore)
+    } catch (e) {
+      logger.error('💬 ChatScreen - erreur pagination:', e)
+    } finally {
+      setLoadingOlder(false)
+    }
+  }, [conversationId, loadingOlder, hasOlderMessages])
 
   const onSend = useCallback(async () => {
     if (!text.trim() || !user?.id) return
@@ -318,12 +359,45 @@ export const ChatScreen: React.FC = () => {
         </View>
       </Modal>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {subscriptionError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="wifi-outline" size={18} color="#b91c1c" style={{ marginRight: 8 }} />
+            <Text style={styles.errorBannerText}>No se pudieron cargar los mensajes.</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setSubscriptionError(false)
+                setMessages([])
+              }}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryButtonText}>Reintentar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <FlatList
           inverted
           data={messages}
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.messagesContainer}
+          contentContainerStyle={[styles.messagesContainer, messages.length === 0 && { flexGrow: 1 }]}
+          onEndReached={loadOlderMessages}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            loadingOlder ? (
+              <View style={styles.loadingOlderRow}>
+                <ActivityIndicator size="small" color="#059669" />
+                <Text style={styles.loadingOlderText}>Cargando mensajes anteriores...</Text>
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            !subscriptionError ? (
+              <View style={styles.emptyChat}>
+                <Ionicons name="chatbubbles-outline" size={48} color="#d1d5db" />
+                <Text style={styles.emptyChatText}>Pregunta sobre la talla, el estado o coordina la entrega — el vendedor te responderá aquí.</Text>
+              </View>
+            ) : null
+          }
         />
                  {/* Product Preview */}
                  {productInfo && showProductPreview && (
@@ -637,5 +711,54 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignSelf: 'flex-start',
     marginTop: 4,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    borderBottomWidth: 1,
+    borderBottomColor: '#fecaca',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#b91c1c',
+  },
+  retryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#b91c1c',
+    borderRadius: 6,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyChat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  emptyChatText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  loadingOlderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  loadingOlderText: {
+    fontSize: 13,
+    color: '#6b7280',
   },
 }) 

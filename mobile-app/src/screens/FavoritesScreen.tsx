@@ -56,17 +56,18 @@ export const FavoritesScreen: React.FC = () => {
         return;
       }
 
-      // Récupérer les produits favoris
-      const productsQuery = query(
-        collection(db, 'products'),
-        where('__name__', 'in', favoriteProductIds.slice(0, 10)) // Firestore limite à 10 IDs
+      const chunks: string[][] = [];
+      for (let i = 0; i < favoriteProductIds.length; i += 10) {
+        chunks.push(favoriteProductIds.slice(i, i + 10));
+      }
+      const snapshots = await Promise.all(
+        chunks.map(chunk =>
+          getDocs(query(collection(db, 'products'), where('__name__', 'in', chunk)))
+        )
       );
-
-      const productsSnapshot = await getDocs(productsQuery);
-      const products = productsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const products = snapshots.flatMap(snap =>
+        snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      );
 
       setFavorites(products);
     } catch (error) {

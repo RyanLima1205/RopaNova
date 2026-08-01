@@ -6,112 +6,32 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  Alert,
   SafeAreaView,
+  ActivityIndicator,
   Platform,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
+import { auth } from '../firebaseConfig';
+import { getWalletData, getTransactionsPaginated, WalletData, Transaction, TransactionCursor } from '../services/paymentService';
+import { logger } from '../utils/logger';
 
 type WalletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Wallet'>;
 
 const { width } = Dimensions.get('window');
 
-// Mock wallet data
-const walletData = {
-  balance: 375.0,
-  pendingEarnings: 1890.5,
-  totalEarnings: 28450.25,
-  totalSpent: 15670.0,
-  monthlyStats: {
-    earned: 4250.0,
-    spent: 1890.5,
-    transactions: 23,
-  },
+const emptyWallet: WalletData = {
+  userId: '',
+  balance: 0,
+  pendingEarnings: 0,
+  totalEarnings: 0,
+  currency: 'DOP',
+  lastUpdated: new Date(),
 };
-
-// Mock transactions
-const transactions = [
-  {
-    id: 1,
-    type: "sale",
-    description: "Venta: Vestido floral marca Zara",
-    amount: 1250.0,
-    date: "2024-01-10T14:30:00",
-    status: "completed",
-    buyer: "María González",
-    reference: "VRD-001234",
-  },
-  {
-    id: 2,
-    type: "withdrawal",
-    description: "Retiro a Banco Popular",
-    amount: -2000.0,
-    date: "2024-01-09T10:15:00",
-    status: "processing",
-    reference: "WTH-005678",
-    estimatedCompletion: "2024-01-11T16:00:00",
-  },
-  {
-    id: 3,
-    type: "purchase",
-    description: "Compra: Zapatos Nike Air Max",
-    amount: -850.0,
-    date: "2024-01-08T16:45:00",
-    status: "completed",
-    seller: "Carlos Rodríguez",
-    reference: "PUR-009876",
-  },
-  {
-    id: 4,
-    type: "refund",
-    description: "Reembolso: Blusa defectuosa",
-    amount: 450.0,
-    date: "2024-01-07T11:20:00",
-    status: "completed",
-    reference: "REF-004321",
-  },
-  {
-    id: 5,
-    type: "bonus",
-    description: "Bono por verificación de identidad",
-    amount: 100.0,
-    date: "2024-01-06T09:00:00",
-    status: "completed",
-    reference: "BON-001111",
-  },
-  {
-    id: 6,
-    type: "fee",
-    description: "Comisión de venta (5%)",
-    amount: -62.5,
-    date: "2024-01-05T15:30:00",
-    status: "completed",
-    reference: "FEE-002222",
-  },
-  {
-    id: 7,
-    type: "deposit",
-    description: "Recarga desde tarjeta Visa",
-    amount: 1500.0,
-    date: "2024-01-04T12:10:00",
-    status: "completed",
-    reference: "DEP-003333",
-  },
-  {
-    id: 8,
-    type: "sale",
-    description: "Venta: Pantalón jeans Levi's",
-    amount: 980.0,
-    date: "2024-01-03T18:25:00",
-    status: "completed",
-    buyer: "Ana Martínez",
-    reference: "VRD-004444",
-  },
-];
 
 export const WalletScreen: React.FC = () => {
   const navigation = useNavigation<WalletScreenNavigationProp>();
@@ -120,6 +40,68 @@ export const WalletScreen: React.FC = () => {
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [dateRange, setDateRange] = useState("all");
+  const [walletData, setWalletData] = useState<WalletData>(emptyWallet);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [cursor, setCursor] = useState<TransactionCursor | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+
+  const loadWallet = React.useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const [wallet, page] = await Promise.all([
+        getWalletData(uid),
+        getTransactionsPaginated(uid, 20),
+      ]);
+      if (wallet) setWalletData(wallet);
+      setTransactions(page.transactions);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+    } catch (error) {
+      logger.error('Error al cargar el wallet:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadMore = React.useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || loadingMore || !hasMore || !cursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await getTransactionsPaginated(uid, 20, cursor);
+      setTransactions(prev => [...prev, ...page.transactions]);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+    } catch (error) {
+      logger.error('Error al cargar más transacciones:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, cursor]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadWallet();
+    }, [loadWallet]),
+  );
+
+  const monthlyStats = React.useMemo(() => {
+    const now = new Date();
+    const monthTransactions = transactions.filter(
+      (t) => t.createdAt.getMonth() === now.getMonth() && t.createdAt.getFullYear() === now.getFullYear(),
+    );
+    const earned = monthTransactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
+    const spent = monthTransactions.filter((t) => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    return { earned, spent, transactions: monthTransactions.length };
+  }, [transactions]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-DO", {
@@ -129,14 +111,14 @@ export const WalletScreen: React.FC = () => {
     }).format(amount);
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat("es-DO", {
       day: "2-digit",
       month: "short",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    }).format(new Date(dateString));
+    }).format(date);
   };
 
   const getTransactionIcon = (type: string) => {
@@ -151,10 +133,6 @@ export const WalletScreen: React.FC = () => {
         return <Ionicons name="add" size={18} color="#059669" />;
       case "refund":
         return <Feather name="refresh-cw" size={18} color="#ea580c" />;
-      case "bonus":
-        return <Feather name="gift" size={18} color="#ec4899" />;
-      case "fee":
-        return <Ionicons name="remove" size={18} color="#dc2626" />;
       default:
         return <Feather name="dollar-sign" size={18} color="#6b7280" />;
     }
@@ -198,25 +176,32 @@ export const WalletScreen: React.FC = () => {
         return "Recarga";
       case "refund":
         return "Reembolso";
-      case "bonus":
-        return "Bono";
-      case "fee":
-        return "Comisión";
       default:
         return "Transacción";
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "Completado";
+      case "processing":
+        return "Procesando";
+      case "cancelled":
+        return "Cancelado";
+      default:
+        return "Fallido";
+    }
+  };
+
   const filteredTransactions = transactions.filter((transaction) => {
-    const matchesSearch =
-      transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transaction.reference.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === "all" || transaction.type === filterType;
     const matchesStatus = filterStatus === "all" || transaction.status === filterStatus;
 
     let matchesDate = true;
     if (dateRange !== "all") {
-      const transactionDate = new Date(transaction.date);
+      const transactionDate = transaction.createdAt;
       const now = new Date();
 
       switch (dateRange) {
@@ -254,11 +239,11 @@ export const WalletScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  const renderTransactionCard = (transaction: any) => (
+  const renderTransactionCard = (transaction: Transaction) => (
     <TouchableOpacity
       key={transaction.id}
       style={styles.transactionCard}
-      onPress={() => Alert.alert('Transacción', `Detalles de ${transaction.reference}`)}
+      onPress={() => setSelectedTransaction(transaction)}
     >
       <View style={styles.transactionIcon}>
         {getTransactionIcon(transaction.type)}
@@ -270,32 +255,12 @@ export const WalletScreen: React.FC = () => {
             {transaction.description}
           </Text>
           <View style={[styles.statusBadge, getStatusColor(transaction.status)]}>
-            <Text style={styles.statusText}>
-              {transaction.status === "completed"
-                ? "Completado"
-                : transaction.status === "processing"
-                  ? "Procesando"
-                  : "Fallido"}
-            </Text>
+            <Text style={styles.statusText}>{getStatusLabel(transaction.status)}</Text>
           </View>
         </View>
-        
+
         <View style={styles.transactionDetails}>
-          <Text style={styles.transactionDate}>{formatDate(transaction.date)}</Text>
-          <Text style={styles.transactionSeparator}>•</Text>
-          <Text style={styles.transactionReference}>{transaction.reference}</Text>
-          {transaction.buyer && (
-            <>
-              <Text style={styles.transactionSeparator}>•</Text>
-              <Text style={styles.transactionUser}>{transaction.buyer}</Text>
-            </>
-          )}
-          {transaction.seller && (
-            <>
-              <Text style={styles.transactionSeparator}>•</Text>
-              <Text style={styles.transactionUser}>{transaction.seller}</Text>
-            </>
-          )}
+          <Text style={styles.transactionDate}>{formatDate(transaction.createdAt)}</Text>
         </View>
       </View>
 
@@ -340,6 +305,11 @@ export const WalletScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#059669" />
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Wallet Balance Card */}
         <View style={styles.balanceCard}>
@@ -391,7 +361,7 @@ export const WalletScreen: React.FC = () => {
             </View>
             <Text style={styles.statLabel}>Este mes ganaste</Text>
             <Text style={styles.statValue}>
-              {showBalance ? formatCurrency(walletData.monthlyStats.earned) : "••••"}
+              {showBalance ? formatCurrency(monthlyStats.earned) : "••••"}
             </Text>
           </View>
 
@@ -401,7 +371,7 @@ export const WalletScreen: React.FC = () => {
             </View>
             <Text style={styles.statLabel}>Este mes gastaste</Text>
             <Text style={styles.statValue}>
-              {showBalance ? formatCurrency(walletData.monthlyStats.spent) : "••••"}
+              {showBalance ? formatCurrency(monthlyStats.spent) : "••••"}
             </Text>
           </View>
 
@@ -410,7 +380,7 @@ export const WalletScreen: React.FC = () => {
               <Feather name="refresh-cw" size={20} color="#7c3aed" />
             </View>
             <Text style={styles.statLabel}>Transacciones</Text>
-            <Text style={styles.statValue}>{walletData.monthlyStats.transactions}</Text>
+            <Text style={styles.statValue}>{monthlyStats.transactions}</Text>
           </View>
         </View>
 
@@ -418,10 +388,6 @@ export const WalletScreen: React.FC = () => {
         <View style={styles.transactionsCard}>
           <View style={styles.transactionsHeader}>
             <Text style={styles.transactionsTitle}>Historial de Transacciones</Text>
-            <TouchableOpacity style={styles.exportButton}>
-              <Feather name="download" size={16} color="#059669" />
-              <Text style={styles.exportButtonText}>Exportar</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Search */}
@@ -454,9 +420,13 @@ export const WalletScreen: React.FC = () => {
             {filteredTransactions.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="wallet-outline" size={48} color="#d1d5db" />
-                <Text style={styles.emptyStateTitle}>No se encontraron transacciones</Text>
+                <Text style={styles.emptyStateTitle}>
+                  {transactions.length === 0 ? 'Aún no tienes transacciones' : 'No se encontraron transacciones'}
+                </Text>
                 <Text style={styles.emptyStateSubtitle}>
-                  Intenta ajustar los filtros de búsqueda
+                  {transactions.length === 0
+                    ? 'Tus ventas, compras, recargas y retiros aparecerán aquí'
+                    : 'Intenta ajustar los filtros de búsqueda'}
                 </Text>
               </View>
             ) : (
@@ -464,9 +434,12 @@ export const WalletScreen: React.FC = () => {
             )}
           </View>
 
-          {filteredTransactions.length > 0 && (
-            <TouchableOpacity style={styles.loadMoreButton}>
-              <Text style={styles.loadMoreText}>Cargar más transacciones</Text>
+          {hasMore && (
+            <TouchableOpacity style={styles.loadMoreButton} onPress={loadMore} disabled={loadingMore}>
+              {loadingMore
+                ? <ActivityIndicator size="small" color="#059669" />
+                : <Text style={styles.loadMoreText}>Cargar más transacciones</Text>
+              }
             </TouchableOpacity>
           )}
         </View>
@@ -491,23 +464,87 @@ export const WalletScreen: React.FC = () => {
               <Text style={styles.quickActionText}>Retirar Dinero</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.quickActionButton}
               onPress={() => navigation.navigate('PaymentSettings')}
             >
               <Ionicons name="card-outline" size={24} color="#059669" />
               <Text style={styles.quickActionText}>Métodos de Pago</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.quickActionButton}>
-              <Ionicons name="wallet-outline" size={24} color="#059669" />
-              <Text style={styles.quickActionText}>Configurar Wallet</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+      )}
+
+      {/* Modal détail transaction */}
+      <Modal
+        visible={!!selectedTransaction}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedTransaction(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedTransaction(null)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+            {selectedTransaction && (
+              <>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalIcon}>
+                    {getTransactionIcon(selectedTransaction.type)}
+                  </View>
+                  <Text style={styles.modalType}>
+                    {getTransactionTypeLabel(selectedTransaction.type)}
+                  </Text>
+                  <TouchableOpacity onPress={() => setSelectedTransaction(null)} style={styles.modalClose}>
+                    <Ionicons name="close" size={22} color="#6b7280" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[
+                  styles.modalAmount,
+                  selectedTransaction.amount > 0 ? styles.amountPositive : styles.amountNegative,
+                ]}>
+                  {selectedTransaction.amount > 0 ? '+' : ''}
+                  {formatCurrency(Math.abs(selectedTransaction.amount))}
+                </Text>
+
+                <View style={[styles.statusBadge, getStatusColor(selectedTransaction.status), styles.modalStatusBadge]}>
+                  <Text style={styles.statusText}>{getStatusLabel(selectedTransaction.status)}</Text>
+                </View>
+
+                <View style={styles.modalDivider} />
+
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Descripción</Text>
+                  <Text style={styles.modalValue}>{selectedTransaction.description}</Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Fecha</Text>
+                  <Text style={styles.modalValue}>{formatDate(selectedTransaction.createdAt)}</Text>
+                </View>
+                {selectedTransaction.relatedOrderId && (
+                  <View style={styles.modalRow}>
+                    <Text style={styles.modalLabel}>Pedido</Text>
+                    <Text style={styles.modalValue}>#{selectedTransaction.relatedOrderId.slice(0, 8)}</Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setSelectedTransaction(null)}
+                >
+                  <Text style={styles.modalCloseButtonText}>Cerrar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -516,6 +553,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -886,5 +928,86 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 80,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalIcon: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  modalType: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalClose: {
+    padding: 4,
+  },
+  modalAmount: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  modalStatusBadge: {
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 20,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
+    marginBottom: 16,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  modalValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 16,
+  },
+  modalCloseButton: {
+    marginTop: 20,
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCloseButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
   },
 }); 

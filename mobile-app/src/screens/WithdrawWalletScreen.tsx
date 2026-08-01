@@ -8,10 +8,14 @@ import {
   TextInput,
   Alert,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
+import { auth } from '../firebaseConfig';
+import { getWalletData, getPaymentMethods, getPaymentMethodDisplayName, addTransaction, updateWalletBalance, PaymentMethod } from '../services/paymentService';
 
 type WithdrawWalletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'WithdrawWallet'>;
 
@@ -19,57 +23,41 @@ interface WithdrawWalletScreenProps {
   navigation: WithdrawWalletScreenNavigationProp;
 }
 
-// Mock bank accounts
-const bankAccounts = [
-  {
-    id: 1,
-    bankName: "Banco Popular Dominicano",
-    accountNumber: "****-****-****-4532",
-    accountType: "Cuenta Corriente",
-    isDefault: true,
-    processingTime: "1-2 días hábiles",
-    fee: 25,
-    minAmount: 500,
-    maxAmount: 25000,
-  },
-  {
-    id: 2,
-    bankName: "Banco de Reservas",
-    accountNumber: "****-****-****-8901",
-    accountType: "Cuenta de Ahorros",
-    isDefault: false,
-    processingTime: "2-3 días hábiles",
-    fee: 30,
-    minAmount: 1000,
-    maxAmount: 50000,
-  },
-  {
-    id: 3,
-    bankName: "BHD León",
-    accountNumber: "****-****-****-2345",
-    accountType: "Cuenta Corriente",
-    isDefault: false,
-    processingTime: "1-2 días hábiles",
-    fee: 20,
-    minAmount: 500,
-    maxAmount: 30000,
-  },
-];
-
-// Mock wallet balance
-const walletBalance = 3250.75;
+const MIN_WITHDRAW_AMOUNT = 500;
 
 export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navigation }) => {
   const [amount, setAmount] = useState('');
-  const [selectedAccount, setSelectedAccount] = useState(1);
+  const [bankAccounts, setBankAccounts] = useState<PaymentMethod[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [showBalance, setShowBalance] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      getWalletData(uid).then((wallet) => {
+        if (wallet) setWalletBalance(wallet.balance);
+      });
+      setLoadingAccounts(true);
+      getPaymentMethods(uid).then((methods) => {
+        const banks = methods.filter((m) => m.type === 'bank_transfer');
+        setBankAccounts(banks);
+        setSelectedAccount((current) => {
+          if (current && banks.some((b) => b.id === current)) return current;
+          return banks.find((b) => b.isDefault)?.id ?? banks[0]?.id ?? null;
+        });
+        setLoadingAccounts(false);
+      });
+    }, []),
+  );
 
   const selectedBankAccount = bankAccounts.find((account) => account.id === selectedAccount);
   const numericAmount = Number.parseFloat(amount) || 0;
-  const fee = selectedBankAccount ? selectedBankAccount.fee : 0;
-  const totalDeduction = numericAmount + fee;
+  const totalDeduction = numericAmount;
   const remainingBalance = walletBalance - totalDeduction;
 
   const formatCurrency = (amount: number) => {
@@ -81,29 +69,40 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
   };
 
   const handleMaxAmount = () => {
-    const maxPossible = Math.min(
-      walletBalance - (selectedBankAccount?.fee || 0),
-      selectedBankAccount?.maxAmount || 25000,
-    );
-    setAmount(Math.max(0, maxPossible).toString());
+    setAmount(Math.max(0, walletBalance).toString());
   };
 
   const handleWithdraw = async () => {
-    if (!amount || !isValidAmount) return;
+    if (!amount || !isValidAmount || !selectedAccount) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
 
     setIsProcessing(true);
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      const accountLabel = selectedBankAccount
+        ? getPaymentMethodDisplayName(selectedBankAccount)
+        : 'cuenta bancaria';
+      await addTransaction(uid, {
+        userId: uid,
+        type: 'withdrawal',
+        description: `Retiro a ${accountLabel}`,
+        amount: -numericAmount,
+        status: 'processing',
+        paymentMethodId: selectedAccount,
+      });
+      await updateWalletBalance(uid, numericAmount, 'subtract');
       setShowConfirmation(true);
-    }, 2000);
+    } catch {
+      Alert.alert('Error', 'No se pudo procesar el retiro. Intenta de nuevo.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const isValidAmount =
-    numericAmount >= (selectedBankAccount?.minAmount || 500) &&
-    numericAmount <= (selectedBankAccount?.maxAmount || 25000) &&
-    totalDeduction <= walletBalance;
+    numericAmount >= MIN_WITHDRAW_AMOUNT &&
+    totalDeduction <= walletBalance &&
+    !!selectedAccount;
 
   if (showConfirmation) {
     return (
@@ -135,25 +134,18 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
                 <Text style={styles.detailLabel}>Monto a retirar:</Text>
                 <Text style={styles.detailValue}>{formatCurrency(numericAmount)}</Text>
               </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Comisión:</Text>
-                <Text style={styles.detailValue}>{formatCurrency(fee)}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Banco destino:</Text>
-                <Text style={styles.detailValue}>{selectedBankAccount?.bankName}</Text>
-              </View>
               <View style={[styles.detailRow, styles.borderTop]}>
-                <Text style={styles.detailLabel}>Tiempo estimado:</Text>
-                <Text style={styles.estimatedTime}>{selectedBankAccount?.processingTime}</Text>
+                <Text style={styles.detailLabel}>Cuenta destino:</Text>
+                <Text style={styles.detailValue}>
+                  {selectedBankAccount ? getPaymentMethodDisplayName(selectedBankAccount) : ''}
+                </Text>
               </View>
             </View>
 
             <View style={styles.infoAlert}>
               <Ionicons name="information-circle" size={20} color="#2563EB" />
               <Text style={styles.infoText}>
-                Recibirás una notificación cuando el dinero esté disponible en tu cuenta bancaria. Los retiros se
-                procesan en días hábiles de 9:00 AM a 5:00 PM.
+                El monto aparecerá en tu cuenta bancaria en los próximos 2 días hábiles (lunes a viernes, de 9:00 AM a 5:00 PM).
               </Text>
             </View>
 
@@ -239,8 +231,10 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
             {amount && !isValidAmount && (
               <Text style={styles.errorText}>
                 {totalDeduction > walletBalance
-                  ? "Saldo insuficiente (incluye comisión)"
-                  : `El monto debe estar entre ${formatCurrency(selectedBankAccount?.minAmount || 500)} y ${formatCurrency(selectedBankAccount?.maxAmount || 25000)}`}
+                  ? "Saldo insuficiente"
+                  : !selectedAccount
+                    ? "Selecciona una cuenta bancaria destino"
+                    : `El monto mínimo a retirar es ${formatCurrency(MIN_WITHDRAW_AMOUNT)}`}
               </Text>
             )}
           </View>
@@ -254,50 +248,52 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cuenta bancaria destino</Text>
           <View style={styles.accountsContainer}>
-            {bankAccounts.map((account) => (
-              <TouchableOpacity
-                key={account.id}
-                style={[
-                  styles.accountItem,
-                  selectedAccount === account.id && styles.selectedAccount,
-                ]}
-                onPress={() => setSelectedAccount(account.id)}
-              >
-                <View style={styles.accountIcon}>
-                  <Ionicons name="business" size={20} color="#6B7280" />
-                </View>
+            {loadingAccounts ? (
+              <ActivityIndicator size="small" color="#3B82F6" />
+            ) : bankAccounts.length === 0 ? (
+              <View style={styles.emptyAccountsState}>
+                <Ionicons name="business-outline" size={40} color="#d1d5db" />
+                <Text style={styles.emptyAccountsTitle}>Aún no tienes cuentas bancarias</Text>
+                <Text style={styles.emptyAccountsSubtitle}>
+                  Agrega una cuenta bancaria para poder retirar tu saldo
+                </Text>
+              </View>
+            ) : (
+              bankAccounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={[
+                    styles.accountItem,
+                    selectedAccount === account.id && styles.selectedAccount,
+                  ]}
+                  onPress={() => setSelectedAccount(account.id)}
+                >
+                  <View style={styles.accountIcon}>
+                    <Ionicons name="business" size={20} color="#6B7280" />
+                  </View>
 
-                <View style={styles.accountInfo}>
-                  <View style={styles.accountHeader}>
-                    <Text style={styles.accountName}>{account.bankName}</Text>
-                    {account.isDefault && (
-                      <View style={styles.defaultBadge}>
-                        <Text style={styles.defaultBadgeText}>Predeterminada</Text>
-                      </View>
+                  <View style={styles.accountInfo}>
+                    <View style={styles.accountHeader}>
+                      <Text style={styles.accountName}>{getPaymentMethodDisplayName(account)}</Text>
+                      {account.isDefault && (
+                        <View style={styles.defaultBadge}>
+                          <Text style={styles.defaultBadgeText}>Predeterminada</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={[
+                    styles.radioButton,
+                    selectedAccount === account.id && styles.radioButtonSelected,
+                  ]}>
+                    {selectedAccount === account.id && (
+                      <View style={styles.radioButtonInner} />
                     )}
                   </View>
-                  <Text style={styles.accountDetails}>
-                    {account.accountType} • {account.accountNumber}
-                  </Text>
-                  <View style={styles.accountMeta}>
-                    <View style={styles.metaItem}>
-                      <Ionicons name="time" size={12} color="#9CA3AF" />
-                      <Text style={styles.metaText}>{account.processingTime}</Text>
-                    </View>
-                    <Text style={styles.metaText}>Comisión: {formatCurrency(account.fee)}</Text>
-                  </View>
-                </View>
-
-                <View style={[
-                  styles.radioButton,
-                  selectedAccount === account.id && styles.radioButtonSelected,
-                ]}>
-                  {selectedAccount === account.id && (
-                    <View style={styles.radioButtonInner} />
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              ))
+            )}
 
             <TouchableOpacity
               style={styles.addAccountButton}
@@ -317,14 +313,6 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
                 <Text style={styles.summaryLabel}>Monto a retirar:</Text>
                 <Text style={styles.summaryValue}>{formatCurrency(numericAmount)}</Text>
               </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Comisión:</Text>
-                <Text style={styles.summaryValue}>{formatCurrency(fee)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Total deducido del wallet:</Text>
-                <Text style={styles.summaryValueDeduction}>{formatCurrency(totalDeduction)}</Text>
-              </View>
               <View style={[styles.summaryRow, styles.borderTop]}>
                 <Text style={styles.summaryLabelFinal}>Recibirás en tu cuenta:</Text>
                 <Text style={styles.summaryValueFinal}>{formatCurrency(numericAmount)}</Text>
@@ -334,8 +322,7 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
             <View style={styles.securityAlert}>
               <Ionicons name="shield-checkmark" size={20} color="#2563EB" />
               <Text style={styles.securityText}>
-                Los retiros se procesan en días hábiles de 9:00 AM a 5:00 PM. Tiempo estimado:{" "}
-                {selectedBankAccount?.processingTime}.
+                Los retiros se procesan en días hábiles de 9:00 AM a 5:00 PM.
               </Text>
             </View>
           </View>
@@ -363,13 +350,7 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
             <View style={styles.infoItem}>
               <View style={styles.infoDot} />
               <Text style={styles.infoItemText}>
-                Recibirás una notificación cuando el dinero esté disponible en tu cuenta
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <View style={styles.infoDot} />
-              <Text style={styles.infoItemText}>
-                Las comisiones varían según el banco destino
+                El monto aparecerá en tu cuenta bancaria en los próximos 2 días hábiles
               </Text>
             </View>
           </View>
@@ -547,6 +528,22 @@ const styles = StyleSheet.create({
   selectedAccount: {
     borderColor: '#3B82F6',
     backgroundColor: '#EFF6FF',
+  },
+  emptyAccountsState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  emptyAccountsTitle: {
+    color: '#6b7280',
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  emptyAccountsSubtitle: {
+    color: '#9ca3af',
+    marginTop: 4,
+    fontSize: 13,
+    textAlign: 'center',
   },
   accountIcon: {
     width: 40,
