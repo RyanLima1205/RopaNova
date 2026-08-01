@@ -2,6 +2,7 @@ import { logger } from "./logger"
 import { initializeApp, getApps, type FirebaseOptions } from "firebase/app"
 import { getAuth } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
+import { getStorage } from "firebase/storage"
 
 const FIREBASE_ENV_KEYS = [
   "NEXT_PUBLIC_FIREBASE_API_KEY",
@@ -67,3 +68,4 @@ const firebaseConfig = resolveFirebaseConfig()
 export const app = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
+export const storage = getStorage(app)

@@ -1,907 +1,596 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import Image from "next/image"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import {
-  ArrowLeft,
-  Search,
-  Grid3X3,
-  List,
-  MapPin,
-  Star,
-  Heart,
-  Share2,
-  Home,
-  MessageCircle,
-  User,
-  Camera,
-  SlidersHorizontal,
-  X,
-  Verified,
-  Clock,
-  Truck,
-} from "lucide-react"
+import { Search, X, SlidersHorizontal, ArrowUpDown, Check, Loader2, Home, Plus, MessageCircle, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "@/components/ui/sheet"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Slider } from "@/components/ui/slider"
-import { Separator } from "@/components/ui/separator"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Label } from "@/components/ui/label"
+import { getProducts, formatProductsLoadError } from "@/lib/services/productService"
+import { db } from "@/lib/firebaseConfig"
+import { doc, getDoc } from "firebase/firestore"
+import { formatPrice } from "@/lib/formatters"
+import { cleanProductImages } from "@/lib/imageUtils"
+import { categories, getSubcategories } from "@/lib/categories"
+import {
+  intelligentSearch,
+  sortProducts,
+  applyAdvancedFilters,
+  extractFilterOptions,
+  SORT_OPTIONS,
+  type SortOption,
+  type AdvancedFilters as AdvancedFiltersType,
+} from "@/lib/searchUtils"
+import { searchCacheService } from "@/lib/searchCacheService"
+import { useFavoriteProductIds } from "@/hooks/useFavoriteProductIds"
+import { RecentlyViewedList } from "@/components/recently-viewed-list"
+import type { Product, Subcategory } from "@/lib/types"
 
-// Mock data for search results
-const searchResults = [
-  {
-    id: 1,
-    title: "Vestido Elegante de Noche Zara",
-    price: 2500,
-    originalPrice: 4200,
-    brand: "Zara",
-    size: "M",
-    condition: "Nuevo",
-    location: "Santo Domingo",
-    distance: "2.3 km",
-    image: "/placeholder.svg?height=300&width=300&text=Vestido",
-    seller: {
-      name: "María González",
-      rating: 4.8,
-      verified: true,
-      responseTime: "1 hora",
-      badges: ["Fast Responder", "Quality Seller"],
-    },
-    isNew: true,
-    shippingOptions: ["pickup", "nationwide"],
-    paymentMethods: ["cash", "bank", "mobile", "paypal"],
-    favorites: 23,
-    views: 156,
-    postedDate: "2024-01-15",
-  },
-  {
-    id: 2,
-    title: "Bolso de Cuero Genuino Coach",
-    price: 1800,
-    originalPrice: 3500,
-    brand: "Coach",
-    size: "Único",
-    condition: "Muy Bueno",
-    location: "Santiago",
-    distance: "45 km",
-    image: "/placeholder.svg?height=300&width=300&text=Bolso",
-    seller: {
-      name: "Ana Rodríguez",
-      rating: 4.9,
-      verified: true,
-      responseTime: "30 min",
-      badges: ["Top Seller", "Eco Warrior"],
-    },
-    isNew: false,
-    shippingOptions: ["pickup", "nationwide", "free"],
-    paymentMethods: ["cash", "bank", "mobile"],
-    favorites: 18,
-    views: 89,
-    postedDate: "2024-01-10",
-  },
-  {
-    id: 3,
-    title: "Zapatos de Tacón Steve Madden",
-    price: 2200,
-    originalPrice: 4800,
-    brand: "Steve Madden",
-    size: "38",
-    condition: "Nuevo",
-    location: "La Romana",
-    distance: "120 km",
-    image: "/placeholder.svg?height=300&width=300&text=Zapatos",
-    seller: {
-      name: "Carmen López",
-      rating: 4.7,
-      verified: false,
-      responseTime: "2 horas",
-      badges: ["Quality Seller"],
-    },
-    isNew: true,
-    shippingOptions: ["pickup"],
-    paymentMethods: ["cash", "bank"],
-    favorites: 12,
-    views: 67,
-    postedDate: "2024-01-12",
-  },
-  {
-    id: 4,
-    title: "Uniforme Escolar Completo",
-    price: 1200,
-    originalPrice: 2400,
-    brand: "Escolar",
-    size: "12 años",
-    condition: "Bueno",
-    location: "Santo Domingo",
-    distance: "5.1 km",
-    image: "/placeholder.svg?height=300&width=300&text=Uniforme",
-    seller: {
-      name: "Rosa Martínez",
-      rating: 4.6,
-      verified: true,
-      responseTime: "4 horas",
-      badges: ["Reliable Seller"],
-    },
-    isNew: false,
-    shippingOptions: ["pickup", "nationwide"],
-    paymentMethods: ["cash", "mobile"],
-    favorites: 8,
-    views: 34,
-    postedDate: "2024-01-08",
-  },
-  {
-    id: 5,
-    title: "Traje de Baño Bikini Victoria's Secret",
-    price: 800,
-    originalPrice: 1600,
-    brand: "Victoria's Secret",
-    size: "S",
-    condition: "Muy Bueno",
-    location: "Punta Cana",
-    distance: "180 km",
-    image: "/placeholder.svg?height=300&width=300&text=Bikini",
-    seller: {
-      name: "Isabella Pérez",
-      rating: 4.9,
-      verified: true,
-      responseTime: "1 hora",
-      badges: ["Fast Responder", "Beach Specialist"],
-    },
-    isNew: false,
-    shippingOptions: ["pickup", "nationwide", "fast"],
-    paymentMethods: ["cash", "bank", "mobile", "paypal"],
-    favorites: 15,
-    views: 78,
-    postedDate: "2024-01-14",
-  },
-  {
-    id: 6,
-    title: "Blazer Profesional Calvin Klein Talla Grande",
-    price: 3200,
-    originalPrice: 6800,
-    brand: "Calvin Klein",
-    size: "XL",
-    condition: "Nuevo",
-    location: "Santo Domingo",
-    distance: "1.8 km",
-    image: "/placeholder.svg?height=300&width=300&text=Blazer",
-    seller: {
-      name: "Patricia Jiménez",
-      rating: 4.8,
-      verified: true,
-      responseTime: "2 horas",
-      badges: ["Professional Wear", "Plus Size Expert"],
-    },
-    isNew: true,
-    shippingOptions: ["pickup", "nationwide"],
-    paymentMethods: ["cash", "bank", "mobile", "paypal", "credit"],
-    favorites: 19,
-    views: 92,
-    postedDate: "2024-01-16",
-  },
-]
+interface SellerInfo {
+  id: string
+  name: string
+  storeName?: string
+  accountType: string
+  avatar?: string
+  verified?: boolean
+}
 
-const quickFilters = [
-  { id: "new-today", label: "Nuevo Hoy", icon: "🆕", active: false },
-  { id: "under-1000", label: "Menos de RD$1,000", icon: "💰", active: false },
-  { id: "designer", label: "Marcas Diseñador", icon: "✨", active: false },
-  { id: "plus-size", label: "Talla Grande", icon: "👗", active: false },
-  { id: "professional", label: "Ropa Profesional", icon: "💼", active: false },
-  { id: "beach", label: "Ropa de Playa", icon: "🏖️", active: false },
-  { id: "school", label: "Uniformes Escolares", icon: "🎒", active: false },
-  { id: "verified", label: "Vendedores Verificados", icon: "✅", active: false },
-]
+interface FirestoreProduct {
+  id: string
+  titulo: string
+  precio: string
+  condicionGeneral: string
+  images: string[]
+  createdAt: any
+  categoria: string
+  subcategoria: string
+  marca: string
+  color: string[]
+  talla: string[]
+  status: string
+  userId: string
+  seller?: SellerInfo
+}
 
-export default function SearchPage() {
+const firestoreProductToProduct = (fp: FirestoreProduct): Product => ({
+  id: fp.id,
+  title: fp.titulo,
+  price: parseFloat(fp.precio) || 0,
+  image: fp.images[0] || "",
+  location: "",
+  likes: 0,
+  condition: fp.condicionGeneral,
+  images: fp.images,
+  createdAt: fp.createdAt,
+  category: fp.categoria,
+  subcategory: fp.subcategoria,
+  brand: fp.marca,
+  color: fp.color,
+  sizes: fp.talla,
+})
+
+const PAGE_SIZE = 20
+
+const DEFAULT_ADVANCED_FILTERS: AdvancedFiltersType = {
+  sizes: [],
+  colors: [],
+  brands: [],
+  locations: [],
+  priceRange: { min: 0, max: 50000 },
+  conditions: [],
+  mainCategory: undefined,
+  subCategory: undefined,
+}
+
+export default function BuscarPage() {
+  const { favoriteProductIds } = useFavoriteProductIds()
+
   const [searchQuery, setSearchQuery] = useState("")
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-  const [showFilters, setShowFilters] = useState(false)
-  const [activeQuickFilters, setActiveQuickFilters] = useState<string[]>([])
-  const [sortBy, setSortBy] = useState("relevance")
+  const [products, setProducts] = useState<FirestoreProduct[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Filter states
-  const [priceRange, setPriceRange] = useState([0, 10000])
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [selectedSizes, setSelectedSizes] = useState<string[]>([])
-  const [selectedConditions, setSelectedConditions] = useState<string[]>([])
-  const [selectedBrands, setSelectedBrands] = useState<string[]>([])
-  const [distanceFilter, setDistanceFilter] = useState("all")
-  const [sellerRating, setSellerRating] = useState("all")
-  const [verifiedOnly, setVerifiedOnly] = useState(false)
-  const [responseTime, setResponseTime] = useState("all")
-  const [shippingOptions, setShippingOptions] = useState<string[]>([])
-  const [paymentMethods, setPaymentMethods] = useState<string[]>([])
+  const [selectedCategory, setSelectedCategory] = useState("1")
+  const [selectedSubcategory, setSelectedSubcategory] = useState<Subcategory | null>(null)
 
-  const [filteredResults, setFilteredResults] = useState(searchResults)
+  const [selectedSortOption, setSelectedSortOption] = useState<SortOption>(SORT_OPTIONS[0])
+  const [showSortSheet, setShowSortSheet] = useState(false)
+  const [showFilterSheet, setShowFilterSheet] = useState(false)
 
-  const categories = ["Mujer", "Hombre", "Niños", "Belleza", "Electrónica", "Hogar"]
-  const sizes = ["XS", "S", "M", "L", "XL", "XXL", "36", "38", "40", "42", "44"]
-  const conditions = ["Nuevo", "Muy Bueno", "Bueno", "Aceptable"]
-  const brands = ["Zara", "H&M", "Nike", "Adidas", "Coach", "Calvin Klein", "Victoria's Secret"]
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersType>(DEFAULT_ADVANCED_FILTERS)
+  const [draftFilters, setDraftFilters] = useState<AdvancedFiltersType>(DEFAULT_ADVANCED_FILTERS)
 
-  const toggleQuickFilter = (filterId: string) => {
-    setActiveQuickFilters((prev) =>
-      prev.includes(filterId) ? prev.filter((id) => id !== filterId) : [...prev, filterId],
-    )
-  }
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
 
-  const clearAllFilters = () => {
-    setActiveQuickFilters([])
-    setPriceRange([0, 10000])
-    setSelectedCategories([])
-    setSelectedSizes([])
-    setSelectedConditions([])
-    setSelectedBrands([])
-    setDistanceFilter("all")
-    setSellerRating("all")
-    setVerifiedOnly(false)
-    setResponseTime("all")
-    setShippingOptions([])
-    setPaymentMethods([])
-  }
+  const availableFilterOptions = useMemo(() => {
+    return extractFilterOptions(products.map(firestoreProductToProduct))
+  }, [products])
 
-  // Filter logic
+  const loadProducts = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await getProducts()
+
+      const firestoreProducts: FirestoreProduct[] = await Promise.all(
+        data.map(async (product) => {
+          let sellerInfo: SellerInfo | undefined
+          if (product.seller?.id) {
+            try {
+              const userDoc = await getDoc(doc(db, "users", product.seller.id))
+              if (userDoc.exists()) {
+                const userData = userDoc.data()
+                sellerInfo = {
+                  id: product.seller.id,
+                  name: userData.name || product.seller.name || "Vendedor",
+                  storeName: userData.storeName || userData.name || product.seller.name || "Vendedor",
+                  accountType: userData.accountType || product.seller.accountType || "private",
+                  avatar: userData.avatar || product.seller.avatar || "",
+                  verified: userData.verified || product.seller.verified || false,
+                }
+              }
+            } catch {
+              sellerInfo = {
+                id: product.seller.id,
+                name: product.seller.name || "Vendedor",
+                storeName: product.seller.name || "Vendedor",
+                accountType: product.seller.accountType || "private",
+                avatar: product.seller.avatar || "",
+                verified: product.seller.verified || false,
+              }
+            }
+          }
+
+          let extractedSizes: string[] = []
+          if (product.id) {
+            try {
+              const productDoc = await getDoc(doc(db, "products", product.id))
+              if (productDoc.exists()) {
+                const productData = productDoc.data()
+                if (productData.stock && Array.isArray(productData.stock)) {
+                  extractedSizes = productData.stock
+                    .map((item: any) => item.talla)
+                    .filter((size: string) => size && size.trim() !== "")
+                }
+              }
+            } catch {
+              // sin tallas — se deja el arreglo vacío
+            }
+          }
+
+          return {
+            id: product.id,
+            titulo: product.title,
+            precio: String(product.price),
+            condicionGeneral: product.condition,
+            images: product.images || [],
+            createdAt: product.createdAt,
+            categoria: product.category || "",
+            subcategoria: product.subcategory || "",
+            marca: product.brand || "",
+            color: product.color || [],
+            talla: extractedSizes.length > 0 ? extractedSizes : product.sizes && product.sizes.length > 0 ? product.sizes : ["Única"],
+            status: "active",
+            userId: product.seller?.id || "",
+            seller: sellerInfo,
+          }
+        }),
+      )
+
+      setProducts(firestoreProducts)
+      setLoadError(null)
+      searchCacheService.cacheFilterOptions(extractFilterOptions(firestoreProducts.map(firestoreProductToProduct)))
+    } catch (error: unknown) {
+      setProducts([])
+      setLoadError(formatProductsLoadError(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
-    let filtered = searchResults
+    loadProducts()
+  }, [loadProducts])
 
-    // Apply search query
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (item) =>
-          item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.brand.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
+  // Filtrado reactivo — se recalcula en cada cambio, igual que el efecto de mobile
+  // (que también dependía de searchQuery y por tanto filtraba en cada pulsación).
+  const filteredProducts = useMemo(() => {
+    let filtered = [...products]
+
+    if (searchQuery.trim()) {
+      const converted = filtered.map(firestoreProductToProduct)
+      const intelligentFiltered = intelligentSearch(converted, searchQuery)
+      const keptIds = new Set(intelligentFiltered.map((p) => p.id))
+      filtered = filtered.filter((fp) => keptIds.has(fp.id))
     }
 
-    // Apply quick filters
-    if (activeQuickFilters.includes("new-today")) {
-      const today = new Date().toISOString().split("T")[0]
-      filtered = filtered.filter((item) => item.postedDate === today || item.isNew)
+    if (selectedCategory !== "1") {
+      const categoryName = categories.find((c) => c.id === selectedCategory)?.name
+      if (categoryName && categoryName !== "Todo") {
+        filtered = filtered.filter((product) => product.categoria === categoryName)
+        if (selectedSubcategory) {
+          filtered = filtered.filter((product) => product.subcategoria === selectedSubcategory.name)
+        }
+      }
     }
 
-    if (activeQuickFilters.includes("under-1000")) {
-      filtered = filtered.filter((item) => item.price < 1000)
+    filtered = filtered.filter((product) => {
+      const price = parseFloat(product.precio.replace(/[^\d.]/g, "")) || 0
+      return price >= advancedFilters.priceRange.min && price <= advancedFilters.priceRange.max
+    })
+
+    if (advancedFilters.conditions.length > 0) {
+      filtered = filtered.filter((product) => advancedFilters.conditions.includes(product.condicionGeneral))
     }
 
-    if (activeQuickFilters.includes("designer")) {
-      const designerBrands = ["Coach", "Calvin Klein", "Victoria's Secret", "Steve Madden"]
-      filtered = filtered.filter((item) => designerBrands.includes(item.brand))
-    }
+    const convertedForFilters = filtered.map(firestoreProductToProduct)
+    const advancedFilteredResults = applyAdvancedFilters(convertedForFilters, advancedFilters)
+    const sorted = sortProducts(advancedFilteredResults, selectedSortOption)
 
-    if (activeQuickFilters.includes("plus-size")) {
-      filtered = filtered.filter(
-        (item) =>
-          ["XL", "XXL", "44", "46"].some((size) => item.size.includes(size)) ||
-          item.title.toLowerCase().includes("talla grande"),
-      )
-    }
+    const sortedIds = sorted.map((p) => p.id)
+    return filtered.filter((fp) => sortedIds.includes(fp.id)).sort((a, b) => sortedIds.indexOf(a.id) - sortedIds.indexOf(b.id))
+  }, [products, searchQuery, selectedCategory, selectedSubcategory, advancedFilters, selectedSortOption])
 
-    if (activeQuickFilters.includes("professional")) {
-      filtered = filtered.filter(
-        (item) =>
-          item.title.toLowerCase().includes("blazer") ||
-          item.title.toLowerCase().includes("profesional") ||
-          item.title.toLowerCase().includes("oficina"),
-      )
-    }
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE)
+  }, [searchQuery, selectedCategory, selectedSubcategory, advancedFilters, selectedSortOption])
 
-    if (activeQuickFilters.includes("beach")) {
-      filtered = filtered.filter(
-        (item) =>
-          item.title.toLowerCase().includes("bikini") ||
-          item.title.toLowerCase().includes("baño") ||
-          item.title.toLowerCase().includes("playa"),
-      )
-    }
-
-    if (activeQuickFilters.includes("school")) {
-      filtered = filtered.filter(
-        (item) => item.title.toLowerCase().includes("uniforme") || item.title.toLowerCase().includes("escolar"),
-      )
-    }
-
-    if (activeQuickFilters.includes("verified")) {
-      filtered = filtered.filter((item) => item.seller.verified)
-    }
-
-    // Apply price range
-    filtered = filtered.filter((item) => item.price >= priceRange[0] && item.price <= priceRange[1])
-
-    // Apply other filters
-    if (selectedCategories.length > 0) {
-      // This would need proper category mapping in real implementation
-    }
-
-    if (verifiedOnly) {
-      filtered = filtered.filter((item) => item.seller.verified)
-    }
-
-    if (sellerRating !== "all") {
-      const minRating = Number.parseFloat(sellerRating)
-      filtered = filtered.filter((item) => item.seller.rating >= minRating)
-    }
-
-    if (distanceFilter !== "all") {
-      const maxDistance = Number.parseInt(distanceFilter)
-      filtered = filtered.filter((item) => {
-        const distance = Number.parseFloat(item.distance)
-        return distance <= maxDistance
-      })
-    }
-
-    // Apply sorting
-    switch (sortBy) {
-      case "price-low":
-        filtered.sort((a, b) => a.price - b.price)
-        break
-      case "price-high":
-        filtered.sort((a, b) => b.price - a.price)
-        break
-      case "newest":
-        filtered.sort((a, b) => new Date(b.postedDate).getTime() - new Date(a.postedDate).getTime())
-        break
-      case "distance":
-        filtered.sort((a, b) => Number.parseFloat(a.distance) - Number.parseFloat(b.distance))
-        break
-      case "rating":
-        filtered.sort((a, b) => b.seller.rating - a.seller.rating)
-        break
-      default:
-        // Keep original order for relevance
-        break
-    }
-
-    setFilteredResults(filtered)
-  }, [
-    searchQuery,
-    activeQuickFilters,
-    priceRange,
-    selectedCategories,
-    verifiedOnly,
-    sellerRating,
-    distanceFilter,
-    sortBy,
-  ])
-
-  const shareToWhatsApp = (item: any) => {
-    const message = `¡Mira este ${item.title} por solo RD$${item.price.toLocaleString()}! 🛍️\n\nVendedor: ${item.seller.name} ⭐${item.seller.rating}\nUbicación: ${item.location}\n\n¡Disponible en RopaNova! 🇩🇴`
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
-    window.open(whatsappUrl, "_blank")
+  const handleSearchSubmit = () => {
+    if (!searchQuery.trim()) return
+    searchCacheService.addToSearchHistory(searchQuery, filteredProducts.length)
   }
 
-  const ProductCard = ({ item, isListView = false }: { item: any; isListView?: boolean }) => (
-    <Card className="bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
-      <CardContent className="p-0">
-        <Link href={`/producto/${item.id}`}>
-          <div className={`${isListView ? "flex" : ""}`}>
-            <div className={`relative ${isListView ? "w-24 h-24 flex-shrink-0" : "aspect-square"}`}>
-              <Image
-                src={item.image || "/placeholder.svg"}
-                alt={item.title}
-                fill
-                className={`object-cover ${isListView ? "rounded-l-lg" : "rounded-t-lg"}`}
-              />
-              {item.isNew && <Badge className="absolute top-2 left-2 bg-emerald-500 text-white text-xs">NUEVO</Badge>}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-2 right-2 h-8 w-8 bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                }}
-              >
-                <Heart className="h-4 w-4" />
-              </Button>
-            </div>
+  const handleCategoryPress = (categoryId: string) => {
+    setSelectedCategory(categoryId)
+    setSelectedSubcategory(null)
+  }
 
-            <div className={`${isListView ? "flex-1 p-3" : "p-3"}`}>
-              <div className="flex items-start justify-between mb-1">
-                <h3 className={`font-medium text-gray-900 line-clamp-2 ${isListView ? "text-sm" : "text-sm"}`}>
-                  {item.title}
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    shareToWhatsApp(item)
-                  }}
-                >
-                  <Share2 className="h-3 w-3" />
-                </Button>
-              </div>
+  const handleLoadMore = () => {
+    setDisplayCount((prev) => Math.min(prev + PAGE_SIZE, filteredProducts.length))
+  }
 
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-lg font-bold text-emerald-600">RD${item.price.toLocaleString()}</p>
-                {item.originalPrice && (
-                  <p className="text-sm text-gray-400 line-through">RD${item.originalPrice.toLocaleString()}</p>
-                )}
-              </div>
+  const openFilterSheet = () => {
+    setDraftFilters(advancedFilters)
+    setShowFilterSheet(true)
+  }
 
-              <div className="flex flex-wrap items-center gap-1 mb-2">
-                <Badge variant={item.condition === "Nuevo" ? "default" : "secondary"} className="text-xs">
-                  {item.condition}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  {item.size}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  {item.brand}
-                </Badge>
-              </div>
+  const applyDraftFilters = () => {
+    setAdvancedFilters(draftFilters)
+    setShowFilterSheet(false)
+  }
 
-              <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  <span>{item.location}</span>
-                  <span>({item.distance})</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                  <span>{item.seller.rating}</span>
-                  {item.seller.verified && <Verified className="h-3 w-3 text-blue-500" />}
-                </div>
-              </div>
+  const clearDraftFilters = () => {
+    setDraftFilters(DEFAULT_ADVANCED_FILTERS)
+  }
 
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>{item.seller.name}</span>
-                <div className="flex items-center gap-2">
-                  <span>{item.views} vistas</span>
-                  <span>{item.favorites} ❤️</span>
-                </div>
-              </div>
-
-              {/* Seller badges */}
-              {item.seller.badges.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {item.seller.badges.slice(0, 2).map((badge, index) => (
-                    <Badge key={index} variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
-                      {badge}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </Link>
-      </CardContent>
-    </Card>
-  )
+  const visibleProducts = filteredProducts.slice(0, displayCount)
+  const activeFilterCount =
+    (advancedFilters.conditions.length > 0 ? 1 : 0) +
+    (advancedFilters.brands.length > 0 ? 1 : 0) +
+    (advancedFilters.priceRange.min > 0 || advancedFilters.priceRange.max < 50000 ? 1 : 0)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-16">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-3 mb-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar ropa, zapatos, accesorios..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-gray-50 border-0 rounded-full"
-              />
-            </div>
-          </div>
-
-          {/* Quick Filters */}
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
-            {quickFilters.map((filter) => (
-              <Button
-                key={filter.id}
-                variant={activeQuickFilters.includes(filter.id) ? "default" : "outline"}
-                size="sm"
-                className={`whitespace-nowrap text-xs flex-shrink-0 ${
-                  activeQuickFilters.includes(filter.id) ? "bg-emerald-500 hover:bg-emerald-600" : "bg-transparent"
-                }`}
-                onClick={() => toggleQuickFilter(filter.id)}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Buscar artículos..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+              className="pl-9 pr-9"
+            />
+            {searchQuery.trim() && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
               >
-                <span className="mr-1">{filter.icon}</span>
-                {filter.label}
-              </Button>
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <Button variant="outline" size="icon" onClick={openFilterSheet} className="relative shrink-0 bg-transparent">
+            <SlidersHorizontal className="h-4 w-4" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-brand-ui text-white text-[10px] flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      <RecentlyViewedList />
+
+      {/* Category chips — siempre visibles en web (a diferencia de mobile, donde este bloque
+          nunca se activaba porque nada llamaba a setShowFilters(true)) */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="flex overflow-x-auto gap-2 scrollbar-hide">
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => handleCategoryPress(category.id)}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-sm border shrink-0 transition-colors ${
+                selectedCategory === category.id
+                  ? "bg-brand-ui border-brand-ui text-white"
+                  : "bg-white border-gray-200 text-gray-600"
+              }`}
+            >
+              {category.name}
+            </button>
+          ))}
+        </div>
+        {selectedCategory !== "1" && getSubcategories(selectedCategory).length > 0 && (
+          <div className="flex overflow-x-auto gap-2 mt-2 scrollbar-hide">
+            {getSubcategories(selectedCategory).map((sub) => (
+              <button
+                key={sub.id}
+                onClick={() => setSelectedSubcategory(selectedSubcategory?.id === sub.id ? null : sub)}
+                className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs border shrink-0 transition-colors ${
+                  selectedSubcategory?.id === sub.id
+                    ? "bg-brand-ui border-brand-ui text-white"
+                    : "bg-white border-gray-200 text-gray-500"
+                }`}
+              >
+                {sub.name}
+              </button>
             ))}
           </div>
-        </div>
-      </header>
+        )}
+      </div>
 
-      {/* Controls Bar */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Dialog open={showFilters} onOpenChange={setShowFilters}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="bg-transparent">
-                  <SlidersHorizontal className="h-4 w-4 mr-2" />
-                  Filtros
-                  {(activeQuickFilters.length > 0 || verifiedOnly) && (
-                    <Badge className="ml-2 bg-emerald-500 text-white text-xs h-5 w-5 rounded-full p-0 flex items-center justify-center">
-                      {activeQuickFilters.length + (verifiedOnly ? 1 : 0)}
-                    </Badge>
-                  )}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Filtros de Búsqueda</DialogTitle>
-                </DialogHeader>
-
-                <Tabs defaultValue="basic" className="w-full">
-                  <TabsList className="grid grid-cols-3 w-full">
-                    <TabsTrigger value="basic">Básico</TabsTrigger>
-                    <TabsTrigger value="seller">Vendedor</TabsTrigger>
-                    <TabsTrigger value="delivery">Entrega</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="basic" className="space-y-4">
-                    {/* Price Range */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">
-                        Rango de Precio: RD${priceRange[0].toLocaleString()} - RD${priceRange[1].toLocaleString()}
-                      </Label>
-                      <Slider
-                        value={priceRange}
-                        onValueChange={setPriceRange}
-                        max={10000}
-                        min={0}
-                        step={100}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <Separator />
-
-                    {/* Categories */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Categorías</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {categories.map((category) => (
-                          <div key={category} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={category}
-                              checked={selectedCategories.includes(category)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setSelectedCategories([...selectedCategories, category])
-                                } else {
-                                  setSelectedCategories(selectedCategories.filter((c) => c !== category))
-                                }
-                              }}
-                            />
-                            <Label htmlFor={category} className="text-sm">
-                              {category}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Condition */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Estado</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {conditions.map((condition) => (
-                          <div key={condition} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={condition}
-                              checked={selectedConditions.includes(condition)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setSelectedConditions([...selectedConditions, condition])
-                                } else {
-                                  setSelectedConditions(selectedConditions.filter((c) => c !== condition))
-                                }
-                              }}
-                            />
-                            <Label htmlFor={condition} className="text-sm">
-                              {condition}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Distance */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Distancia</Label>
-                      <Select value={distanceFilter} onValueChange={setDistanceFilter}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Cualquier distancia</SelectItem>
-                          <SelectItem value="5">Dentro de 5 km</SelectItem>
-                          <SelectItem value="10">Dentro de 10 km</SelectItem>
-                          <SelectItem value="25">Dentro de 25 km</SelectItem>
-                          <SelectItem value="city">Misma ciudad</SelectItem>
-                          <SelectItem value="province">Misma provincia</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="seller" className="space-y-4">
-                    {/* Seller Rating */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Calificación del Vendedor</Label>
-                      <Select value={sellerRating} onValueChange={setSellerRating}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Cualquier calificación</SelectItem>
-                          <SelectItem value="5">5 estrellas únicamente</SelectItem>
-                          <SelectItem value="4">4+ estrellas</SelectItem>
-                          <SelectItem value="3">3+ estrellas</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Separator />
-
-                    {/* Verified Sellers */}
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="verified" checked={verifiedOnly} onCheckedChange={setVerifiedOnly} />
-                      <Label htmlFor="verified" className="text-sm">
-                        Solo vendedores verificados
-                      </Label>
-                    </div>
-
-                    <Separator />
-
-                    {/* Response Time */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Tiempo de Respuesta</Label>
-                      <Select value={responseTime} onValueChange={setResponseTime}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Cualquier tiempo</SelectItem>
-                          <SelectItem value="1">Responde en 1 hora</SelectItem>
-                          <SelectItem value="24">Responde el mismo día</SelectItem>
-                          <SelectItem value="48">Responde en 24 horas</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="delivery" className="space-y-4">
-                    {/* Shipping Options */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Opciones de Entrega</Label>
-                      <div className="space-y-2">
-                        {[
-                          { id: "pickup", label: "Solo recogida", icon: <MapPin className="h-4 w-4" /> },
-                          { id: "nationwide", label: "Envío nacional", icon: <Truck className="h-4 w-4" /> },
-                          { id: "free", label: "Envío gratis", icon: <Truck className="h-4 w-4" /> },
-                          { id: "fast", label: "Entrega rápida", icon: <Clock className="h-4 w-4" /> },
-                        ].map((option) => (
-                          <div key={option.id} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={option.id}
-                              checked={shippingOptions.includes(option.id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setShippingOptions([...shippingOptions, option.id])
-                                } else {
-                                  setShippingOptions(shippingOptions.filter((o) => o !== option.id))
-                                }
-                              }}
-                            />
-                            <Label htmlFor={option.id} className="text-sm flex items-center gap-2">
-                              {option.icon}
-                              {option.label}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Payment Methods */}
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Métodos de Pago</Label>
-                      <div className="space-y-2">
-                        {[
-                          { id: "cash", label: "Efectivo", icon: "💵" },
-                          { id: "bank", label: "Transferencia bancaria", icon: "🏦" },
-                          { id: "mobile", label: "Pago móvil", icon: "📱" },
-                          { id: "paypal", label: "PayPal", icon: "💳" },
-                          { id: "credit", label: "Tarjeta de crédito", icon: "💳" },
-                        ].map((method) => (
-                          <div key={method.id} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={method.id}
-                              checked={paymentMethods.includes(method.id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setPaymentMethods([...paymentMethods, method.id])
-                                } else {
-                                  setPaymentMethods(paymentMethods.filter((m) => m !== method.id))
-                                }
-                              }}
-                            />
-                            <Label htmlFor={method.id} className="text-sm flex items-center gap-2">
-                              <span>{method.icon}</span>
-                              {method.label}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-
-                <div className="flex gap-2 pt-4">
-                  <Button variant="outline" onClick={clearAllFilters} className="flex-1 bg-transparent">
-                    Limpiar Todo
-                  </Button>
-                  <Button onClick={() => setShowFilters(false)} className="flex-1 bg-emerald-500 hover:bg-emerald-600">
-                    Aplicar Filtros
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="relevance">Relevancia</SelectItem>
-                <SelectItem value="newest">Más recientes</SelectItem>
-                <SelectItem value="price-low">Precio: menor a mayor</SelectItem>
-                <SelectItem value="price-high">Precio: mayor a menor</SelectItem>
-                <SelectItem value="distance">Distancia</SelectItem>
-                <SelectItem value="rating">Mejor calificados</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === "grid" ? "default" : "outline"}
-              size="icon"
-              className={`h-8 w-8 ${viewMode === "grid" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-transparent"}`}
-              onClick={() => setViewMode("grid")}
-            >
-              <Grid3X3 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="icon"
-              className={`h-8 w-8 ${viewMode === "list" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-transparent"}`}
-              onClick={() => setViewMode("list")}
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      {/* Results header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center justify-between">
+        <span className="text-sm text-gray-500">{filteredProducts.length} resultados</span>
+        <button onClick={() => setShowSortSheet(true)} className="flex items-center gap-1 text-sm text-gray-600">
+          <ArrowUpDown className="h-3.5 w-3.5" />
+          {selectedSortOption.label}
+        </button>
       </div>
 
       {/* Results */}
       <div className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm text-gray-600">{filteredResults.length} resultados encontrados</p>
-          {(activeQuickFilters.length > 0 || verifiedOnly) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearAllFilters}
-              className="text-emerald-600 hover:text-emerald-700"
-            >
-              <X className="h-4 w-4 mr-1" />
-              Limpiar filtros
-            </Button>
-          )}
-        </div>
-
-        {/* Active Filters Display */}
-        {activeQuickFilters.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {activeQuickFilters.map((filterId) => {
-              const filter = quickFilters.find((f) => f.id === filterId)
-              return filter ? (
-                <Badge
-                  key={filterId}
-                  variant="secondary"
-                  className="bg-emerald-100 text-emerald-700 border-emerald-200"
-                >
-                  {filter.icon} {filter.label}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-4 w-4 ml-1 hover:bg-emerald-200"
-                    onClick={() => toggleQuickFilter(filterId)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </Badge>
-              ) : null
-            })}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2">
+            <Loader2 className="h-6 w-6 animate-spin text-brand-ui" />
+            <p className="text-sm text-gray-500">Cargando productos...</p>
           </div>
-        )}
-
-        {/* Products Grid/List */}
-        <div className={viewMode === "grid" ? "grid grid-cols-2 gap-3" : "space-y-3"}>
-          {filteredResults.map((item) => (
-            <ProductCard key={item.id} item={item} isListView={viewMode === "list"} />
-          ))}
-        </div>
-
-        {filteredResults.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <Search className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium mb-2">No se encontraron resultados</p>
-            <p className="text-sm mb-4">Intenta ajustar tus filtros o buscar algo diferente</p>
-            <Button variant="outline" onClick={clearAllFilters} className="bg-transparent">
-              Limpiar todos los filtros
+        ) : loadError ? (
+          <div className="text-center py-16">
+            <p className="text-sm text-gray-600 mb-3">{loadError}</p>
+            <Button variant="outline" onClick={() => loadProducts()}>
+              Reintentar
             </Button>
+          </div>
+        ) : visibleProducts.length > 0 ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {visibleProducts.map((item) => (
+                <Link key={item.id} href={`/producto/${item.id}`}>
+                  <Card className="overflow-hidden hover:shadow-md transition-shadow">
+                    <div className="relative">
+                      <img
+                        src={cleanProductImages(item)[0] || "/placeholder.svg"}
+                        alt={item.titulo}
+                        className="w-full h-36 object-cover"
+                      />
+                      {item.status === "sold" && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <Badge className="bg-red-500 text-white">VENDIDO</Badge>
+                        </div>
+                      )}
+                      {favoriteProductIds.includes(item.id) && (
+                        <Badge variant="secondary" className="absolute top-1.5 right-1.5 text-xs bg-white/90">
+                          ♥
+                        </Badge>
+                      )}
+                    </div>
+                    <CardContent className="p-2.5">
+                      <p className="text-sm font-medium text-gray-900 line-clamp-2 mb-1">{item.titulo}</p>
+                      <p className="text-sm font-bold text-brand-ui mb-1">{formatPrice(parseFloat(item.precio) || 0)}</p>
+                      <div className="flex items-center gap-1 flex-wrap mb-1">
+                        <Badge variant="outline" className="text-xs">
+                          {item.condicionGeneral}
+                        </Badge>
+                        {item.marca && (
+                          <Badge variant="outline" className="text-xs">
+                            {item.marca}
+                          </Badge>
+                        )}
+                      </div>
+                      {item.seller && (
+                        <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                          {item.seller.storeName || item.seller.name}
+                          {item.seller.verified && <Check className="h-3 w-3 text-brand-ui shrink-0" />}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+
+            {displayCount < filteredProducts.length ? (
+              <div className="flex justify-center mt-4">
+                <Button variant="outline" onClick={handleLoadMore}>
+                  Cargar más productos
+                </Button>
+              </div>
+            ) : (
+              <p className="text-center text-sm text-gray-400 mt-6">No hay más productos</p>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-16">
+            <Search className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            <p className="font-medium text-gray-700">No se encontraron resultados</p>
+            <p className="text-sm text-gray-500 mt-1">Intenta ajustar tus filtros o buscar algo diferente</p>
           </div>
         )}
       </div>
 
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
-        <div className="flex">
-          <Link
-            href="/"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <Home className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Inicio</span>
+      {/* Sort sheet */}
+      <Sheet open={showSortSheet} onOpenChange={setShowSortSheet}>
+        <SheetContent side="bottom" className="rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle>Ordenar por</SheetTitle>
+          </SheetHeader>
+          <div className="mt-2">
+            {SORT_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => {
+                  setSelectedSortOption(option)
+                  setShowSortSheet(false)
+                }}
+                className="w-full flex items-center justify-between py-3 border-b last:border-b-0 text-left"
+              >
+                <span className={selectedSortOption.id === option.id ? "text-brand-ui font-medium" : "text-gray-700"}>
+                  {option.label}
+                </span>
+                {selectedSortOption.id === option.id && <Check className="h-4 w-4 text-brand-ui" />}
+              </button>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Simplified filter sheet — price range, condition, brand.
+          TODO: full AdvancedFilters parity (size-by-subcategory, color swatches,
+          "near me" distance filter) is a separate follow-up task. */}
+      <Sheet open={showFilterSheet} onOpenChange={setShowFilterSheet}>
+        <SheetContent side="bottom" className="rounded-t-xl max-h-[85vh] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Filtros</SheetTitle>
+          </SheetHeader>
+
+          <div className="space-y-5 mt-4">
+            <div>
+              <p className="text-sm font-medium text-gray-900 mb-2">Precio (RD$)</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Mínimo"
+                  value={draftFilters.priceRange.min || ""}
+                  onChange={(e) =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      priceRange: { ...prev.priceRange, min: Number(e.target.value) || 0 },
+                    }))
+                  }
+                />
+                <span className="text-gray-400">—</span>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Máximo"
+                  value={draftFilters.priceRange.max === 50000 ? "" : draftFilters.priceRange.max}
+                  onChange={(e) =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      priceRange: { ...prev.priceRange, max: Number(e.target.value) || 50000 },
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-900 mb-2">Condición</p>
+              <div className="flex flex-wrap gap-2">
+                {availableFilterOptions.conditions.map((condition) => {
+                  const active = draftFilters.conditions.includes(condition)
+                  return (
+                    <button
+                      key={condition}
+                      onClick={() =>
+                        setDraftFilters((prev) => ({
+                          ...prev,
+                          conditions: active
+                            ? prev.conditions.filter((c) => c !== condition)
+                            : [...prev.conditions, condition],
+                        }))
+                      }
+                      className={`px-3 py-1.5 rounded-full text-sm border ${
+                        active ? "bg-brand-ui border-brand-ui text-white" : "bg-white border-gray-200 text-gray-600"
+                      }`}
+                    >
+                      {condition}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-900 mb-2">Marca</p>
+              <Select
+                value={draftFilters.brands[0] ?? "all"}
+                onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, brands: value === "all" ? [] : [value] }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas las marcas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las marcas</SelectItem>
+                  {availableFilterOptions.brands.map((brand) => (
+                    <SelectItem key={brand} value={brand}>
+                      {brand}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <SheetFooter className="mt-6 flex-row gap-2">
+            <Button variant="outline" onClick={clearDraftFilters} className="flex-1 bg-transparent">
+              Limpiar filtros
+            </Button>
+            <Button onClick={applyDraftFilters} className="flex-1 bg-brand-ui hover:bg-brand-dark">
+              Aplicar
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* Bottom navigation */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
+        <div className="flex items-center justify-around py-2">
+          <Link href="/" className="flex flex-col items-center p-2">
+            <Home className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Inicio</span>
           </Link>
-          <Link href="/buscar" className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-emerald-500">
-            <Search className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Buscar</span>
+          <Link href="/buscar" className="flex flex-col items-center p-2">
+            <Search className="h-5 w-5 text-brand-ui" />
+            <span className="text-xs text-brand-ui mt-1">Buscar</span>
           </Link>
-          <Link
-            href="/vender"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <Camera className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Vender</span>
+          <Link href="/vender" className="flex flex-col items-center p-2">
+            <Plus className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Vender</span>
           </Link>
-          <Link
-            href="/mensajes"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <MessageCircle className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Mensajes</span>
+          <Link href="/mensajes" className="flex flex-col items-center p-2">
+            <MessageCircle className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Mensajes</span>
           </Link>
-          <Link
-            href="/perfil"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <User className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Perfil</span>
+          <Link href="/perfil" className="flex flex-col items-center p-2">
+            <User className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Perfil</span>
           </Link>
         </div>
-      </nav>
-
-      {/* Bottom spacing for fixed navigation */}
-      <div className="h-16"></div>
+      </div>
     </div>
   )
 }

@@ -1,726 +1,604 @@
 "use client"
 
-import { useState } from "react"
-import Image from "next/image"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
-  ArrowLeft,
-  Settings,
   BarChart3,
-  Star,
-  Shield,
-  MapPin,
-  Calendar,
-  Heart,
-  ShoppingBag,
-  MessageCircle,
-  Edit,
+  Settings,
   Camera,
+  Pencil,
+  Store,
+  User,
+  Star,
+  Users,
+  CheckCircle2,
+  MoreVertical,
+  Share2,
+  Trash2,
   Home,
   Search,
-  User,
-  Eye,
-  TrendingUp,
-  Award,
-  Target,
-  DollarSign,
-  Trophy,
-  Crown,
+  Plus,
+  MessageCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
-import { BadgesShowcase } from "@/components/badges-showcase"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { toast } from "@/hooks/use-toast"
+import { RequireAuth } from "@/components/require-auth"
+import { useAuth } from "@/contexts/AuthContext"
+import { useFavoriteProductIds } from "@/hooks/useFavoriteProductIds"
+import { db, storage } from "@/lib/firebaseConfig"
+import { formatPrice } from "@/lib/formatters"
+import { getReviewsBySellerId, computeSellerReviewStats } from "@/lib/services/reviewService"
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore"
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 
-// Mock user data with enhanced features
-const userData = {
-  id: "user1",
-  name: "María González",
-  username: "@maria_vintage",
-  avatar: "/placeholder.svg?height=100&width=100&text=MG",
-  coverImage: "/placeholder.svg?height=200&width=400&text=Cover",
-  bio: "Amante de la moda vintage y sostenible. Vendiendo piezas únicas desde 2022. ✨",
-  location: "Santo Domingo, República Dominicana",
-  memberSince: "Marzo 2022",
-  verified: true,
-  stats: {
-    totalSales: 89,
-    rating: 4.8,
-    reviewCount: 127,
-    followers: 234,
-    following: 156,
-    totalViews: 12450,
-    totalEarnings: 45600,
-    avgResponseTime: "2.3 horas",
-    repeatCustomers: 23,
-    sustainabilityScore: 85,
-  },
-  badges: [
-    { name: "Vendedor Verificado", icon: Shield, color: "emerald", level: "verified" },
-    { name: "Top Seller", icon: TrendingUp, color: "blue", level: "gold" },
-    { name: "Respuesta Rápida", icon: MessageCircle, color: "purple", level: "silver" },
-    { name: "Eco Warrior", icon: Target, color: "green", level: "bronze" },
-    { name: "Quality Expert", icon: Award, color: "yellow", level: "gold" },
-    { name: "Customer Favorite", icon: Heart, color: "red", level: "silver" },
-  ],
-  rewards: {
-    points: 2450,
-    level: "Gold Seller",
-    nextLevel: "Platinum Seller",
-    pointsToNext: 550,
-    achievements: [
-      { name: "Primera Venta", icon: "🎉", unlocked: true },
-      { name: "10 Ventas", icon: "🔟", unlocked: true },
-      { name: "50 Ventas", icon: "🏆", unlocked: true },
-      { name: "100 Ventas", icon: "💯", unlocked: false },
-      { name: "Vendedor del Mes", icon: "👑", unlocked: true },
-      { name: "5 Estrellas", icon: "⭐", unlocked: true },
-    ],
-  },
-  insights: {
-    monthlySavings: 5200,
-    itemsSold: 12,
-    avgSalePrice: 2100,
-    topCategory: "Vestidos",
-    bestSellingMonth: "Diciembre",
-    customerRetention: 78,
-    priceAccuracy: 92,
-    descriptionQuality: 88,
-  },
-  leaderboard: {
-    cityRank: 15,
-    categoryRank: 8,
-    overallRank: 142,
-    trending: "up",
-  },
+interface ProfileBadge {
+  name: string
+  icon: string
+  color: string
 }
 
-// Enhanced mock listings data
-const myListings = [
-  {
-    id: 1,
-    image: "/placeholder.svg?height=200&width=200",
-    title: "Vestido Elegante de Noche Zara",
-    price: 2500,
-    condition: "Nuevo",
-    status: "active",
-    views: 234,
-    favorites: 18,
-    postedDate: "Hace 2 días",
-    performance: "high",
-    analytics: {
-      clickRate: 8.5,
-      favoriteRate: 7.7,
-      inquiries: 5,
-    },
-  },
-  {
-    id: 2,
-    image: "/placeholder.svg?height=200&width=200",
-    title: "Bolso de Cuero Genuino Coach",
-    price: 1800,
-    condition: "Usado",
-    status: "sold",
-    views: 156,
-    favorites: 12,
-    postedDate: "Hace 1 semana",
-    performance: "medium",
-    analytics: {
-      clickRate: 6.2,
-      favoriteRate: 7.7,
-      inquiries: 3,
-      soldIn: "5 días",
-    },
-  },
-  {
-    id: 3,
-    image: "/placeholder.svg?height=200&width=200",
-    title: "Zapatos de Tacón Steve Madden",
-    price: 2200,
-    condition: "Nuevo",
-    status: "active",
-    views: 89,
-    favorites: 7,
-    postedDate: "Hace 3 días",
-    performance: "low",
-    analytics: {
-      clickRate: 4.1,
-      favoriteRate: 7.9,
-      inquiries: 1,
-    },
-  },
-]
+interface UserProfileData {
+  id: string
+  username: string
+  name: string
+  lastname: string
+  storeName: string
+  accountType: string
+  avatar: string
+  coverImage: string
+  bio: string
+  location: string
+  province: string
+  city: string
+  verified: boolean
+  stats: { followers: number }
+  badges: ProfileBadge[]
+  createdAt?: string
+}
 
-// Mock favorites data
-const myFavorites = [
-  {
-    id: 4,
-    image: "/placeholder.svg?height=200&width=200",
-    title: "Chaqueta de Cuero Vintage",
-    price: 4500,
-    condition: "Usado",
-    seller: "Ana Rodríguez",
-    location: "Santiago",
-  },
-  {
-    id: 5,
-    image: "/placeholder.svg?height=200&width=200",
-    title: "Jeans Skinny Levi's 511",
-    price: 1500,
-    condition: "Usado",
-    seller: "Carlos Martínez",
-    location: "La Romana",
-  },
-]
+const defaultUserData: UserProfileData = {
+  id: "",
+  username: "",
+  name: "",
+  lastname: "",
+  storeName: "",
+  accountType: "",
+  avatar: "",
+  coverImage: "",
+  bio: "",
+  location: "",
+  province: "",
+  city: "",
+  verified: false,
+  stats: { followers: 0 },
+  badges: [],
+  createdAt: "",
+}
 
-export default function ProfilePage() {
-  const [activeTab, setActiveTab] = useState("publicaciones")
+interface UserListing {
+  id: string
+  title: string
+  price: string
+  condition: string
+  images: string[]
+  createdAt: any
+  category: string
+  subcategory: string
+  brand: string
+  color: string[]
+  talla: string[]
+  status?: "active" | "sold" | "inactive"
+}
 
-  const StarRating = ({ rating }: { rating: number }) => (
-    <div className="flex gap-1">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <Star key={star} className={`h-4 w-4 ${star <= rating ? "text-yellow-400 fill-current" : "text-gray-300"}`} />
-      ))}
-    </div>
-  )
-
-  const getBadgeIcon = (badge: any) => {
-    const IconComponent = badge.icon
-    return <IconComponent className="h-3 w-3 mr-1" />
+/** Misma lógica que mobile-app ProfileScreen.tsx (soporta string o Firestore Timestamp). */
+function formatCreatedAt(createdAt?: any) {
+  if (!createdAt) return ""
+  let date: Date
+  if (typeof createdAt === "object" && createdAt.seconds) {
+    date = new Date(createdAt.seconds * 1000)
+  } else {
+    date = new Date(createdAt)
   }
+  if (isNaN(date.getTime())) return ""
+  const monthsEs = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  ]
+  return `${monthsEs[date.getMonth()]} ${date.getFullYear()}`
+}
 
-  const getBadgeColor = (level: string) => {
-    switch (level) {
-      case "gold":
-        return "bg-yellow-100 text-yellow-700 border-yellow-300"
-      case "silver":
-        return "bg-gray-100 text-gray-700 border-gray-300"
-      case "bronze":
-        return "bg-orange-100 text-orange-700 border-orange-300"
-      default:
-        return "bg-blue-100 text-blue-700 border-blue-300"
+export default function PerfilPageGate() {
+  return (
+    <RequireAuth>
+      <PerfilPage />
+    </RequireAuth>
+  )
+}
+
+function PerfilPage() {
+  const { user } = useAuth()
+  const router = useRouter()
+  const { favoriteProductIds } = useFavoriteProductIds()
+  const profileUserId = user?.id || ""
+
+  const [userData, setUserData] = useState<UserProfileData>(defaultUserData)
+  const [loading, setLoading] = useState(true)
+  const [myListings, setMyListings] = useState<UserListing[]>([])
+  const [listingsLoading, setListingsLoading] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [uploadingCover, setUploadingCover] = useState(false)
+  const [sellerReviewStats, setSellerReviewStats] = useState({ averageRating: 0, reviewCount: 0 })
+  const [productToDelete, setProductToDelete] = useState<UserListing | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const coverInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!profileUserId) {
+      setUserData(defaultUserData)
+      setLoading(false)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "users", profileUserId))
+        if (cancelled) return
+        if (docSnap.exists()) {
+          setUserData({ ...defaultUserData, ...(docSnap.data() as Partial<UserProfileData>), id: profileUserId })
+        } else {
+          setUserData(defaultUserData)
+        }
+      } catch {
+        if (!cancelled) setUserData(defaultUserData)
+      }
+      if (!cancelled) setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileUserId])
+
+  const fetchSellerReviewStats = useCallback(async () => {
+    if (!profileUserId) {
+      setSellerReviewStats({ averageRating: 0, reviewCount: 0 })
+      return
+    }
+    try {
+      const rows = await getReviewsBySellerId(profileUserId)
+      const stats = computeSellerReviewStats(rows)
+      setSellerReviewStats({ averageRating: stats.averageRating, reviewCount: stats.reviewCount })
+    } catch {
+      setSellerReviewStats({ averageRating: 0, reviewCount: 0 })
+    }
+  }, [profileUserId])
+
+  const fetchUserListings = useCallback(async () => {
+    if (!profileUserId) return
+    setListingsLoading(true)
+    try {
+      const q = query(collection(db, "products"), where("userId", "==", profileUserId))
+      const snap = await getDocs(q)
+      const listings: UserListing[] = []
+      snap.forEach((d) => {
+        const data = d.data()
+        let tallas: string[] = []
+        if (data.stock && Array.isArray(data.stock)) {
+          tallas = data.stock.map((item: any) => item.talla).filter(Boolean)
+        }
+        listings.push({
+          id: d.id,
+          title: data.titulo || data.title || "",
+          price: data.precio || data.price || "",
+          condition: data.condicionGeneral || data.condition || "",
+          images: data.images || [],
+          createdAt: data.createdAt,
+          category: data.categoria || data.category || "",
+          subcategory: data.subcategoria || data.subcategory || "",
+          brand: data.marca || data.brand || "",
+          color: data.color || [],
+          talla: tallas,
+          status: data.status || "active",
+        })
+      })
+      listings.sort((a, b) => {
+        const dateA = a.createdAt?.seconds ? new Date(a.createdAt.seconds * 1000) : new Date(a.createdAt)
+        const dateB = b.createdAt?.seconds ? new Date(b.createdAt.seconds * 1000) : new Date(b.createdAt)
+        return dateB.getTime() - dateA.getTime()
+      })
+      setMyListings(listings)
+    } catch {
+      // deja la lista tal cual estaba
+    } finally {
+      setListingsLoading(false)
+    }
+  }, [profileUserId])
+
+  useEffect(() => {
+    fetchUserListings()
+    fetchSellerReviewStats()
+  }, [fetchUserListings, fetchSellerReviewStats])
+
+  const isStore = userData.accountType === "fisica" || userData.accountType === "virtual"
+
+  const handleUploadImage = async (file: File, type: "avatar" | "cover") => {
+    if (!user?.id) return
+    type === "avatar" ? setUploadingAvatar(true) : setUploadingCover(true)
+    try {
+      const fileName = type === "avatar" ? `avatars/${user.id}/${Date.now()}.jpg` : `covers/${user.id}/${Date.now()}.jpg`
+      const imageRef = ref(storage, fileName)
+      await uploadBytes(imageRef, file)
+      const downloadURL = await getDownloadURL(imageRef)
+
+      const updateData = type === "avatar" ? { avatar: downloadURL } : { coverImage: downloadURL }
+      await updateDoc(doc(db, "users", user.id), updateData)
+      setUserData((prev) => ({ ...prev, ...updateData }))
+
+      const imageType = type === "avatar" ? "perfil" : "portada"
+      toast({ title: `Foto de ${imageType} actualizada` })
+    } catch {
+      const imageType = type === "avatar" ? "perfil" : "portada"
+      toast({ title: `Error al actualizar la foto de ${imageType}`, variant: "destructive" })
+    } finally {
+      type === "avatar" ? setUploadingAvatar(false) : setUploadingCover(false)
     }
   }
 
-  const ListingCard = ({ item }: { item: any }) => (
-    <Link href={`/producto/${item.id}`}>
-      <Card className="bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-        <CardContent className="p-0">
-          <div className="relative">
-            <Image
-              src={item.image || "/placeholder.svg"}
-              alt={item.title}
-              width={200}
-              height={200}
-              className="h-48 w-full object-cover rounded-t-lg"
-            />
-            {item.status === "sold" && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-t-lg">
-                <Badge className="bg-red-500 text-white">VENDIDO</Badge>
-              </div>
-            )}
-            {item.performance === "high" && (
-              <Badge className="absolute top-2 left-2 bg-green-500 text-white text-xs">🔥 POPULAR</Badge>
-            )}
-          </div>
-          <div className="p-3">
-            <h3 className="font-medium text-sm text-gray-900 line-clamp-2 mb-1">{item.title}</h3>
-            <p className="text-lg font-bold text-emerald-600 mb-1">RD${item.price.toLocaleString()}</p>
-            <Badge variant={item.condition === "Nuevo" ? "default" : "secondary"} className="text-xs mb-2">
-              {item.condition}
-            </Badge>
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  <Eye className="h-3 w-3" />
-                  <span>{item.views}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Heart className="h-3 w-3" />
-                  <span>{item.favorites}</span>
-                </div>
-              </div>
-              <span>{item.postedDate}</span>
-            </div>
-            {/* Performance Analytics */}
-            {item.analytics && (
-              <div className="text-xs text-gray-500 space-y-1">
-                <div className="flex justify-between">
-                  <span>Tasa de clics:</span>
-                  <span className={item.analytics.clickRate > 6 ? "text-green-600" : "text-yellow-600"}>
-                    {item.analytics.clickRate}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Consultas:</span>
-                  <span>{item.analytics.inquiries}</span>
-                </div>
-                {item.analytics.soldIn && (
-                  <div className="flex justify-between">
-                    <span>Vendido en:</span>
-                    <span className="text-green-600">{item.analytics.soldIn}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  )
+  const handleShareProduct = (item: UserListing) => {
+    const shareUrl = `${window.location.origin}/producto/${item.id}`
+    const shareMessage = `¡Mira este producto en RopaNova!\n\n${item.title}\nPrecio: RD$${(Number(item.price) || 0).toLocaleString()}\n\n${shareUrl}`
+    if (navigator.share) {
+      navigator.share({ title: item.title, text: shareMessage, url: shareUrl })
+    } else {
+      navigator.clipboard.writeText(shareUrl)
+      toast({ title: "Enlace copiado" })
+    }
+  }
 
-  const FavoriteCard = ({ item }: { item: any }) => (
-    <Link href={`/producto/${item.id}`}>
-      <Card className="bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-        <CardContent className="p-0">
-          <div className="relative">
-            <Image
-              src={item.image || "/placeholder.svg"}
-              alt={item.title}
-              width={200}
-              height={200}
-              className="h-48 w-full object-cover rounded-t-lg"
-            />
-          </div>
-          <div className="p-3">
-            <h3 className="font-medium text-sm text-gray-900 line-clamp-2 mb-1">{item.title}</h3>
-            <p className="text-lg font-bold text-emerald-600 mb-1">RD${item.price.toLocaleString()}</p>
-            <Badge variant={item.condition === "Nuevo" ? "default" : "secondary"} className="text-xs mb-2">
-              {item.condition}
-            </Badge>
-            <div className="flex items-center gap-1 text-xs text-gray-500">
-              <MapPin className="h-3 w-3" />
-              <span>{item.location}</span>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">Por {item.seller}</p>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  )
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return
+    setIsDeleting(true)
+    try {
+      await deleteDoc(doc(db, "products", productToDelete.id))
+      setMyListings((prev) => prev.filter((item) => item.id !== productToDelete.id))
+      toast({ title: `"${productToDelete.title}" eliminado` })
+    } catch {
+      toast({ title: "Error al eliminar la publicación", variant: "destructive" })
+    } finally {
+      setIsDeleting(false)
+      setProductToDelete(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-brand-ui text-sm">Cargando perfil...</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-16">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="font-semibold text-gray-900">Mi Perfil</h1>
-          </div>
+          <h1 className="font-semibold text-gray-900">Mi Perfil</h1>
           <div className="flex items-center gap-2">
             <Link href="/dashboard">
-              <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent">
-                <BarChart3 className="h-5 w-5" />
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <BarChart3 className="h-5 w-5 text-brand-ui" />
               </Button>
             </Link>
             <Link href="/configuracion">
               <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Settings className="h-5 w-5" />
+                <Settings className="h-5 w-5 text-gray-700" />
               </Button>
             </Link>
           </div>
         </div>
       </header>
 
-      {/* Profile Header */}
-      <div className="bg-white">
-        {/* Cover Image */}
-        <div className="relative h-32 bg-gradient-to-r from-emerald-400 to-blue-500">
-          <Image src={userData.coverImage || "/placeholder.svg"} alt="Cover" fill className="object-cover" />
-          <Button variant="ghost" size="icon" className="absolute bottom-2 right-2 h-8 w-8 bg-white/80 hover:bg-white">
-            <Camera className="h-4 w-4" />
-          </Button>
+      {/* Cover image */}
+      <div className="relative h-60 bg-brand-light overflow-hidden">
+        {userData.coverImage ? (
+          <img src={userData.coverImage} alt="Portada" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Camera className="h-10 w-10 text-brand-ui" />
+          </div>
+        )}
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleUploadImage(file, "cover")
+            e.target.value = ""
+          }}
+        />
+        <button
+          onClick={() => coverInputRef.current?.click()}
+          disabled={uploadingCover}
+          className="absolute bottom-2 right-3 bg-white rounded-full p-2 shadow disabled:opacity-60"
+        >
+          <Camera className={`h-4 w-4 text-brand-ui ${uploadingCover ? "animate-pulse" : ""}`} />
+        </button>
+      </div>
+
+      {/* Avatar + info */}
+      <div className="bg-white px-4 pb-4 border-b border-gray-200">
+        <div className="flex items-end -mt-14">
+          <div className="relative">
+            {userData.avatar ? (
+              <img
+                src={userData.avatar}
+                alt={userData.name}
+                className={`border-4 border-white object-cover ${isStore ? "w-40 h-40 rounded-xl" : "w-20 h-20 rounded-full"}`}
+              />
+            ) : (
+              <div
+                className={`border-4 border-white bg-brand-light flex items-center justify-center ${isStore ? "w-40 h-40 rounded-xl" : "w-20 h-20 rounded-full"}`}
+              >
+                {isStore ? <Store className="h-12 w-12 text-brand-ui" /> : <User className="h-8 w-8 text-brand-ui" />}
+              </div>
+            )}
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleUploadImage(file, "avatar")
+                e.target.value = ""
+              }}
+            />
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="absolute bottom-1 right-1 bg-white border border-gray-200 rounded-md p-1.5 disabled:opacity-60"
+            >
+              <Pencil className={`h-3.5 w-3.5 text-brand-ui ${uploadingAvatar ? "animate-pulse" : ""}`} />
+            </button>
+          </div>
+          <div className="flex-1 ml-4 mt-16">
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-lg font-semibold text-gray-900 truncate">
+                {isStore ? userData.storeName || `${userData.name} ${userData.lastname}` : `${userData.name} ${userData.lastname}`}
+              </h2>
+              {userData.verified && (
+                <span className="bg-brand-ui rounded-full p-0.5 shrink-0">
+                  <CheckCircle2 className="h-3 w-3 text-white" />
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500">@{userData.username.replace(/^@/, "")}</p>
+          </div>
         </div>
 
-        {/* Profile Info */}
-        <div className="px-4 pb-4">
-          <div className="flex items-end gap-4 -mt-12">
-            <div className="relative">
-              <Avatar className="h-24 w-24 border-4 border-white">
-                <AvatarImage src={userData.avatar || "/placeholder.svg"} alt={userData.name} />
-                <AvatarFallback className="text-2xl">
-                  {userData.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
-                </AvatarFallback>
-              </Avatar>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute bottom-0 right-0 h-6 w-6 bg-white border border-gray-200 rounded-full"
+        {userData.badges.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {userData.badges.slice(0, 3).map((badge, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5"
+                style={{ backgroundColor: badge.color + "22", color: badge.color }}
               >
-                <Edit className="h-3 w-3" />
-              </Button>
-            </div>
-            <div className="flex-1 mt-4">
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-xl font-bold text-gray-900">{userData.name}</h2>
-                {userData.verified && <Shield className="h-5 w-5 text-emerald-500" />}
-                <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300">
-                  <Crown className="h-3 w-3 mr-1" />
-                  {userData.rewards.level}
-                </Badge>
-              </div>
-              <p className="text-gray-600 text-sm">{userData.username}</p>
-            </div>
-          </div>
-
-          <p className="text-gray-700 text-sm mt-3 mb-3">{userData.bio}</p>
-
-          <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
-            <div className="flex items-center gap-1">
-              <MapPin className="h-4 w-4" />
-              <span>{userData.location}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Calendar className="h-4 w-4" />
-              <span>Miembro desde {userData.memberSince}</span>
-            </div>
-          </div>
-
-          {/* Enhanced Stats */}
-          <div className="grid grid-cols-4 gap-4 mb-4">
-            <div className="text-center">
-              <p className="text-lg font-bold text-gray-900">{userData.stats.totalSales}</p>
-              <p className="text-xs text-gray-600">Ventas</p>
-            </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-1">
-                <StarRating rating={userData.stats.rating} />
-                <span className="text-sm font-medium">{userData.stats.rating}</span>
-              </div>
-              <p className="text-xs text-gray-600">{userData.stats.reviewCount} reseñas</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-gray-900">{userData.stats.followers}</p>
-              <p className="text-xs text-gray-600">Seguidores</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-emerald-600">RD${userData.stats.totalEarnings.toLocaleString()}</p>
-              <p className="text-xs text-gray-600">Ganado</p>
-            </div>
-          </div>
-
-          {/* Rewards Progress */}
-          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg p-3 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Trophy className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm font-medium text-yellow-800">{userData.rewards.points} puntos</span>
-              </div>
-              <span className="text-xs text-yellow-600">
-                {userData.rewards.pointsToNext} para {userData.rewards.nextLevel}
-              </span>
-            </div>
-            <Progress
-              value={(userData.rewards.points / (userData.rewards.points + userData.rewards.pointsToNext)) * 100}
-              className="h-2 bg-yellow-200"
-            />
-          </div>
-
-          {/* Enhanced Badges */}
-          <div className="flex gap-2 flex-wrap mb-4">
-            {userData.badges.slice(0, 4).map((badge, index) => (
-              <Badge key={index} variant="outline" className={`text-xs ${getBadgeColor(badge.level)}`}>
-                {getBadgeIcon(badge)}
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
                 {badge.name}
-              </Badge>
+              </span>
             ))}
-            {userData.badges.length > 4 && (
-              <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 border-gray-200">
-                +{userData.badges.length - 4} más
+            {userData.badges.length > 3 && (
+              <Badge variant="outline" className="text-xs">
+                +{userData.badges.length - 3} más
               </Badge>
             )}
           </div>
+        )}
 
-          {/* Personal Shopping Insights */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <DollarSign className="h-4 w-4 text-emerald-600" />
-              <span className="text-sm font-medium text-emerald-800">Ahorro Personal</span>
-            </div>
-            <p className="text-sm text-emerald-700">
-              Has ahorrado RD${userData.insights.monthlySavings.toLocaleString()} este mes comprando segunda mano
-            </p>
-          </div>
+        {userData.bio && <p className="text-sm text-gray-700 mt-3">{userData.bio}</p>}
+
+        <p className="text-xs text-gray-500 mt-2">
+          {userData.province && userData.city ? `${userData.province}, ${userData.city}` : userData.location}
+        </p>
+        {userData.createdAt && (
+          <p className="text-xs text-gray-500 mt-1">Miembro desde {formatCreatedAt(userData.createdAt)}</p>
+        )}
+
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {userData.accountType === "fisica" && (
+            <Badge variant="outline" className="text-xs text-brand-ui border-brand-ui">
+              Tienda Física
+            </Badge>
+          )}
+          {userData.accountType === "virtual" && (
+            <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
+              Tienda Virtual
+            </Badge>
+          )}
+          {userData.verified && (
+            <Badge variant="outline" className="text-xs text-brand-ui border-brand-ui">
+              Verificado
+            </Badge>
+          )}
         </div>
       </div>
 
-      {/* Content Tabs */}
-      <div className="mt-2">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="bg-white border-b">
-            <TabsList className="grid grid-cols-4 w-full h-12 bg-transparent">
-              <TabsTrigger
-                value="publicaciones"
-                className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-600"
-              >
-                Publicaciones ({myListings.length})
-              </TabsTrigger>
-              <TabsTrigger
-                value="favoritos"
-                className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-600"
-              >
-                Favoritos ({myFavorites.length})
-              </TabsTrigger>
-              <TabsTrigger
-                value="insights"
-                className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-600"
-              >
-                Insights
-              </TabsTrigger>
-              <TabsTrigger
-                value="rewards"
-                className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-600"
-              >
-                Recompensas
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent value="publicaciones" className="mt-0">
-            <div className="p-4">
-              <div className="grid grid-cols-2 gap-3">
-                {myListings.map((item) => (
-                  <ListingCard key={item.id} item={item} />
-                ))}
-              </div>
-              {myListings.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <ShoppingBag className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-lg font-medium mb-2">No tienes publicaciones</p>
-                  <p className="text-sm mb-4">Comienza a vender tus artículos</p>
-                  <Link href="/vender">
-                    <Button className="bg-emerald-500 hover:bg-emerald-600">Publicar Artículo</Button>
-                  </Link>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="favoritos" className="mt-0">
-            <div className="p-4">
-              <div className="grid grid-cols-2 gap-3">
-                {myFavorites.map((item) => (
-                  <FavoriteCard key={item.id} item={item} />
-                ))}
-              </div>
-              {myFavorites.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <Heart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-lg font-medium mb-2">No tienes favoritos</p>
-                  <p className="text-sm mb-4">Guarda los artículos que te gusten</p>
-                  <Link href="/buscar">
-                    <Button variant="outline" className="bg-transparent">
-                      Explorar Productos
-                    </Button>
-                  </Link>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="insights" className="mt-0">
-            <div className="p-4 space-y-4">
-              {/* Personal Shopping Insights */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-emerald-500" />
-                    Insights Personales
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-emerald-50 rounded-lg">
-                      <p className="text-2xl font-bold text-emerald-600">
-                        RD${userData.insights.monthlySavings.toLocaleString()}
-                      </p>
-                      <p className="text-sm text-gray-600">Ahorrado este mes</p>
-                    </div>
-                    <div className="text-center p-3 bg-blue-50 rounded-lg">
-                      <p className="text-2xl font-bold text-blue-600">{userData.insights.itemsSold}</p>
-                      <p className="text-sm text-gray-600">Artículos vendidos</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Precio promedio de venta:</span>
-                      <span className="font-medium">RD${userData.insights.avgSalePrice.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Categoría más vendida:</span>
-                      <span className="font-medium">{userData.insights.topCategory}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Mejor mes de ventas:</span>
-                      <span className="font-medium">{userData.insights.bestSellingMonth}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Seller Performance Analytics */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-blue-500" />
-                    Rendimiento como Vendedor
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Retención de clientes</span>
-                      <span className="text-sm text-gray-600">{userData.insights.customerRetention}%</span>
-                    </div>
-                    <Progress value={userData.insights.customerRetention} className="h-2" />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Precisión de precios</span>
-                      <span className="text-sm text-gray-600">{userData.insights.priceAccuracy}%</span>
-                    </div>
-                    <Progress value={userData.insights.priceAccuracy} className="h-2" />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Calidad de descripción</span>
-                      <span className="text-sm text-gray-600">{userData.insights.descriptionQuality}%</span>
-                    </div>
-                    <Progress value={userData.insights.descriptionQuality} className="h-2" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div className="text-center p-3 bg-purple-50 rounded-lg">
-                      <p className="text-lg font-bold text-purple-600">{userData.stats.repeatCustomers}</p>
-                      <p className="text-xs text-gray-600">Clientes recurrentes</p>
-                    </div>
-                    <div className="text-center p-3 bg-orange-50 rounded-lg">
-                      <p className="text-lg font-bold text-orange-600">{userData.stats.sustainabilityScore}</p>
-                      <p className="text-xs text-gray-600">Puntuación eco</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Leaderboard Position */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-yellow-500" />
-                    Posición en Rankings
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-yellow-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-yellow-800">En tu ciudad</p>
-                        <p className="text-sm text-yellow-600">Santo Domingo</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold text-yellow-700">#{userData.leaderboard.cityRank}</p>
-                        <div className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3 text-green-500" />
-                          <span className="text-xs text-green-600">Subiendo</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-blue-800">En {userData.insights.topCategory}</p>
-                        <p className="text-sm text-blue-600">Tu categoría principal</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold text-blue-700">#{userData.leaderboard.categoryRank}</p>
-                        <div className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3 text-green-500" />
-                          <span className="text-xs text-green-600">Subiendo</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-gray-800">Ranking general</p>
-                        <p className="text-sm text-gray-600">Todos los vendedores</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold text-gray-700">#{userData.leaderboard.overallRank}</p>
-                        <div className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3 text-green-500" />
-                          <span className="text-xs text-green-600">Subiendo</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="rewards" className="mt-0">
-            <div className="p-4 space-y-4">
-              <BadgesShowcase userStats={userData.stats} showFilters={true} compact={false} />
-            </div>
-          </TabsContent>
-        </Tabs>
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 bg-white px-4 py-3 border-b border-gray-200">
+        <Link href={profileUserId ? `/vendedor/${profileUserId}/reseñas` : "#"}>
+          <Card className="hover:shadow-md transition-shadow">
+            <CardContent className="p-3 flex flex-col items-center text-center">
+              <Star className="h-5 w-5 text-yellow-500 mb-1" />
+              <p className="font-semibold text-gray-900">
+                {sellerReviewStats.reviewCount > 0 ? `${sellerReviewStats.averageRating.toFixed(1)}/5` : "—"}
+              </p>
+              <p className="text-xs text-gray-500">
+                {sellerReviewStats.reviewCount} {sellerReviewStats.reviewCount === 1 ? "reseña" : "reseñas"}
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Card>
+          <CardContent className="p-3 flex flex-col items-center text-center">
+            <Users className="h-5 w-5 text-brand-ui mb-1" />
+            <p className="font-semibold text-gray-900">{userData.stats.followers.toLocaleString()}</p>
+            <p className="text-xs text-gray-500">Seguidores</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
-        <div className="flex">
-          <Link
-            href="/"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <Home className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Inicio</span>
+      {/* Listings */}
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900">Anuncios del Vendedor</h3>
+          <span className="text-sm text-gray-500">{myListings.length} productos</span>
+        </div>
+
+        {listingsLoading ? (
+          <p className="text-sm text-gray-500 text-center py-8">Cargando productos...</p>
+        ) : myListings.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p className="font-medium mb-1">No hay productos disponibles</p>
+            <p className="text-sm">Aún no has publicado productos</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {myListings.map((item) => (
+              <Card key={item.id} className="overflow-hidden">
+                <div className="relative">
+                  <Link href={`/producto/${item.id}`}>
+                    <img
+                      src={item.images[0] || "/placeholder.svg"}
+                      alt={item.title}
+                      className="w-full h-36 object-cover"
+                    />
+                  </Link>
+                  {item.status === "sold" && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                      <Badge className="bg-red-500 text-white">VENDIDO</Badge>
+                    </div>
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-7 w-7 bg-white/90 hover:bg-white">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => router.push(`/vender?edit=${item.id}`)}>
+                        <Pencil className="h-4 w-4 mr-2" /> Modificar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleShareProduct(item)}>
+                        <Share2 className="h-4 w-4 mr-2" /> Compartir
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setProductToDelete(item)} className="text-red-600 focus:text-red-600">
+                        <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {favoriteProductIds.includes(item.id) && (
+                    <Badge variant="secondary" className="absolute bottom-1 left-1 text-xs bg-white/90">
+                      ♥ favorito
+                    </Badge>
+                  )}
+                </div>
+                <CardContent className="p-2.5">
+                  <p className="text-sm font-medium text-gray-900 line-clamp-2 mb-1">{item.title}</p>
+                  <p className="text-sm font-bold text-brand-ui mb-1">{formatPrice(Number(item.price) || 0)}</p>
+                  <div className="flex items-center gap-1 flex-wrap text-xs">
+                    <Badge variant="outline" className="text-xs">
+                      {item.condition}
+                    </Badge>
+                    {item.brand && (
+                      <Badge variant="outline" className="text-xs">
+                        {item.brand}
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!productToDelete} onOpenChange={(open) => !open && setProductToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar publicación</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar &quot;{productToDelete?.title}&quot;? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteProduct} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
+              {isDeleting ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bottom navigation */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
+        <div className="flex items-center justify-around py-2">
+          <Link href="/" className="flex flex-col items-center p-2">
+            <Home className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Inicio</span>
           </Link>
-          <Link
-            href="/buscar"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <Search className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Buscar</span>
+          <Link href="/buscar" className="flex flex-col items-center p-2">
+            <Search className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Buscar</span>
           </Link>
-          <Link
-            href="/vender"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <Camera className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Vender</span>
+          <Link href="/vender" className="flex flex-col items-center p-2">
+            <Plus className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Vender</span>
           </Link>
-          <Link
-            href="/mensajes"
-            className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-gray-400 hover:text-emerald-500"
-          >
-            <MessageCircle className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Mensajes</span>
+          <Link href="/mensajes" className="flex flex-col items-center p-2">
+            <MessageCircle className="h-5 w-5 text-gray-400" />
+            <span className="text-xs text-gray-400 mt-1">Mensajes</span>
           </Link>
-          <Link href="/perfil" className="flex-1 py-2 px-1 flex flex-col items-center justify-center text-emerald-500">
-            <User className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium">Perfil</span>
+          <Link href="/perfil" className="flex flex-col items-center p-2">
+            <User className="h-5 w-5 text-brand-ui" />
+            <span className="text-xs text-brand-ui mt-1">Perfil</span>
           </Link>
         </div>
-      </nav>
-
-      {/* Bottom spacing for fixed navigation */}
-      <div className="h-16"></div>
+      </div>
     </div>
   )
 }
