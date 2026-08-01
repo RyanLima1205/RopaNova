@@ -1,397 +1,383 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   Plus,
-  CreditCard,
-  Building2,
-  Smartphone,
-  DollarSign,
-  Shield,
-  Star,
-  MoreVertical,
-  Edit,
-  Trash2,
-  CheckCircle,
-  AlertCircle,
   Eye,
   EyeOff,
   Wallet,
-  Clock,
+  Download,
+  Info,
+  ShieldCheck,
+  ShieldAlert,
+  CheckCircle2,
   TrendingUp,
-  PiggyBank,
+  CreditCard,
+  Building2,
+  Banknote,
+  Smartphone,
+  MoreVertical,
+  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { RequireAuth } from "@/components/require-auth"
+import { toast } from "@/hooks/use-toast"
+import { useAuth } from "@/contexts/AuthContext"
+import {
+  getPaymentMethods,
+  getWalletData,
+  getRecentTransactions,
+  getPaymentPreferences,
+  updatePaymentPreferences,
+  setDefaultPaymentMethod,
+  deletePaymentMethod,
+  formatCurrency,
+  getTransactionStatusLabel,
+  type PaymentMethod,
+  type WalletData,
+  type Transaction,
+  type PaymentPreferences,
+} from "@/lib/services/paymentService"
 
-// Mock payment methods data
-const paymentMethods = [
-  {
-    id: 1,
-    type: "card",
-    name: "Visa **** 4532",
-    bank: "Banco Popular Dominicano",
-    expiry: "12/26",
-    isDefault: true,
-    isVerified: true,
-    lastUsed: "Hace 2 días",
-    logo: "/placeholder.svg?height=32&width=50&text=VISA",
-  },
-  {
-    id: 2,
-    type: "card",
-    name: "Mastercard **** 8901",
-    bank: "Banco de Reservas",
-    expiry: "08/25",
-    isDefault: false,
-    isVerified: true,
-    lastUsed: "Hace 1 semana",
-    logo: "/placeholder.svg?height=32&width=50&text=MC",
-  },
-  {
-    id: 3,
-    type: "bank",
-    name: "Transferencia Bancaria",
-    bank: "Banco BHD León",
-    account: "****7890",
-    isDefault: false,
-    isVerified: true,
-    lastUsed: "Hace 3 días",
-    logo: "/placeholder.svg?height=32&width=50&text=BHD",
-  },
-]
-
-// Dominican payment options
-const dominican_payment_options = [
-  {
-    id: "card",
-    name: "Tarjeta de Crédito/Débito",
-    description: "Visa, Mastercard, American Express",
-    icon: CreditCard,
-    popular: true,
-    fees: "Sin comisión",
-    processingTime: "Inmediato",
-  },
-  {
-    id: "bank_transfer",
-    name: "Transferencia Bancaria",
-    description: "Bancos dominicanos principales",
-    icon: Building2,
-    popular: true,
-    fees: "RD$25",
-    processingTime: "1-2 días hábiles",
-  },
-  {
-    id: "mobile_payment",
-    name: "Pago Móvil",
-    description: "Tpago, Azul Mobile, BHD App",
-    icon: Smartphone,
-    popular: false,
-    fees: "RD$15",
-    processingTime: "Inmediato",
-  },
-  {
-    id: "cash",
-    name: "Efectivo (Encuentro)",
-    description: "Pago en persona al recoger",
-    icon: DollarSign,
-    popular: true,
-    fees: "Gratis",
-    processingTime: "En el momento",
-  },
-]
-
-// RopaNova Wallet data
-const walletData = {
-  balance: 2450.0,
-  pendingEarnings: 890.5,
-  totalEarnings: 15670.25,
-  recentTransactions: [
-    {
-      id: 1,
-      type: "sale",
-      description: "Venta: Vestido floral",
-      amount: 850.0,
-      date: "Hace 2 horas",
-      status: "completed",
-    },
-    {
-      id: 2,
-      type: "withdrawal",
-      description: "Retiro a Banco Popular",
-      amount: -1200.0,
-      date: "Ayer",
-      status: "processing",
-    },
-    {
-      id: 3,
-      type: "purchase",
-      description: "Compra: Zapatos Nike",
-      amount: -450.0,
-      date: "Hace 3 días",
-      status: "completed",
-    },
-  ],
+function PaymentMethodIcon({ type }: { type: PaymentMethod["type"] }) {
+  switch (type) {
+    case "bank_transfer":
+      return <Building2 className="h-5 w-5 text-brand-ui" />
+    case "mobile_payment":
+      return <Smartphone className="h-5 w-5 text-blue-500" />
+    case "cash":
+      return <Banknote className="h-5 w-5 text-yellow-500" />
+    default:
+      return <CreditCard className="h-5 w-5 text-gray-500" />
+  }
 }
 
-export default function MetodosPagoPage() {
+function TransactionIcon({ type }: { type: Transaction["type"] }) {
+  switch (type) {
+    case "sale":
+      return <TrendingUp className="h-4 w-4 text-brand-ui" />
+    case "withdrawal":
+      return <Download className="h-4 w-4 text-blue-600" />
+    case "purchase":
+      return <CreditCard className="h-4 w-4 text-orange-600" />
+    default:
+      return <Banknote className="h-4 w-4 text-gray-500" />
+  }
+}
+
+function statusColor(status: Transaction["status"]) {
+  switch (status) {
+    case "completed":
+      return "text-brand-ui"
+    case "processing":
+      return "text-yellow-600"
+    case "failed":
+      return "text-red-600"
+    default:
+      return "text-gray-500"
+  }
+}
+
+function formatRelativeDate(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffHours < 1) return "Hace menos de 1 hora"
+  if (diffHours < 24) return `Hace ${diffHours} hora${diffHours > 1 ? "s" : ""}`
+  if (diffDays === 1) return "Ayer"
+  if (diffDays < 7) return `Hace ${diffDays} días`
+  if (diffDays < 30) return `Hace ${Math.floor(diffDays / 7)} semana${Math.floor(diffDays / 7) > 1 ? "s" : ""}`
+  return date.toLocaleDateString("es-DO")
+}
+
+export default function PagosPageGate() {
+  return (
+    <RequireAuth>
+      <PagosPage />
+    </RequireAuth>
+  )
+}
+
+function PagosPage() {
+  const router = useRouter()
+  const { user } = useAuth()
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [walletData, setWalletData] = useState<WalletData | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [preferences, setPreferences] = useState<PaymentPreferences | null>(null)
   const [showBalance, setShowBalance] = useState(true)
-  const [autoWithdraw, setAutoWithdraw] = useState(false)
-  const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<PaymentMethod | null>(null)
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-DO", {
-      style: "currency",
-      currency: "DOP",
-      minimumFractionDigits: 0,
-    }).format(amount)
-  }
+  const loadAllData = useCallback(async () => {
+    if (!user?.id) return
+    try {
+      const [methodsData, walletInfo, transactionsData, prefsData] = await Promise.all([
+        getPaymentMethods(user.id),
+        getWalletData(user.id),
+        getRecentTransactions(user.id, 10),
+        getPaymentPreferences(user.id),
+      ])
+      setPaymentMethods(methodsData)
+      setWalletData(walletInfo)
+      setTransactions(transactionsData)
+      setPreferences(prefsData)
+    } catch {
+      toast({ title: "No se pudieron cargar los datos de pago", variant: "destructive" })
+    }
+    setLoading(false)
+  }, [user?.id])
 
-  const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case "sale":
-        return <TrendingUp className="h-4 w-4 text-green-600" />
-      case "withdrawal":
-        return <PiggyBank className="h-4 w-4 text-blue-600" />
-      case "purchase":
-        return <CreditCard className="h-4 w-4 text-orange-600" />
-      default:
-        return <DollarSign className="h-4 w-4 text-gray-600" />
+  useEffect(() => {
+    setLoading(true)
+    loadAllData()
+  }, [loadAllData])
+
+  const handleAutoWithdrawToggle = async (value: boolean) => {
+    if (!user?.id) return
+    try {
+      await updatePaymentPreferences(user.id, { autoWithdraw: value })
+      setPreferences((prev) => (prev ? { ...prev, autoWithdraw: value } : prev))
+    } catch {
+      toast({ title: "No se pudo actualizar la configuración", variant: "destructive" })
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "text-green-600"
-      case "processing":
-        return "text-yellow-600"
-      case "failed":
-        return "text-red-600"
-      default:
-        return "text-gray-600"
+  const handleSetDefault = async (methodId: string) => {
+    if (!user?.id) return
+    try {
+      await setDefaultPaymentMethod(user.id, methodId)
+      await loadAllData()
+      toast({ title: "Método establecido como predeterminado" })
+    } catch {
+      toast({ title: "No se pudo establecer como predeterminado", variant: "destructive" })
     }
+  }
+
+  const handleDelete = async () => {
+    if (!user?.id || !deleteTarget) return
+    try {
+      await deletePaymentMethod(user.id, deleteTarget.id)
+      await loadAllData()
+      toast({ title: "Método eliminado correctamente" })
+    } catch {
+      toast({ title: "No se pudo eliminar el método", variant: "destructive" })
+    }
+    setDeleteTarget(null)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3">
+        <Loader2 className="h-6 w-6 animate-spin text-brand-ui" />
+        <p className="text-sm text-gray-500">Cargando métodos de pago...</p>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/configuracion">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="font-semibold text-gray-900">Métodos de Pago</h1>
-          </div>
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar
+    <div className="min-h-screen bg-gray-50 pb-10">
+      <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-5 w-5" />
           </Button>
+          <h1 className="font-semibold text-gray-900">Métodos de Pago</h1>
         </div>
-      </header>
+        <Button variant="ghost" size="icon" onClick={() => router.push("/configuracion/pagos/agregar")}>
+          <Plus className="h-5 w-5 text-brand-ui" />
+        </Button>
+      </div>
 
-      <div className="p-4 space-y-6">
-        {/* RopaNova Wallet */}
-        <Card className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
-          <CardHeader>
+      <div className="p-4 max-w-2xl mx-auto space-y-4">
+        {/* Wallet */}
+        {walletData && (
+          <div className="bg-brand-ui rounded-2xl p-5 text-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Wallet className="h-6 w-6" />
-                <CardTitle className="text-white">RopaNova Wallet</CardTitle>
+                <span className="font-bold text-lg">RopaNova Wallet</span>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowBalance(!showBalance)}
-                className="text-white hover:bg-white/20"
-              >
-                {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+              <button onClick={() => setShowBalance((v) => !v)}>
+                {showBalance ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+            <p className="text-sm text-brand-light mt-3">Saldo disponible</p>
+            <p className="text-3xl font-bold mt-0.5">{showBalance ? formatCurrency(walletData.balance) : "••••••"}</p>
+            <div className="flex justify-between mt-3">
               <div>
-                <p className="text-emerald-100 text-sm">Saldo disponible</p>
-                <p className="text-3xl font-bold">{showBalance ? formatCurrency(walletData.balance) : "••••••"}</p>
+                <p className="text-xs text-brand-light">Ganancias pendientes</p>
+                <p className="font-bold">{showBalance ? formatCurrency(walletData.pendingEarnings) : "••••"}</p>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-emerald-100 text-xs">Ganancias pendientes</p>
-                  <p className="text-lg font-semibold">
-                    {showBalance ? formatCurrency(walletData.pendingEarnings) : "••••"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-emerald-100 text-xs">Total ganado</p>
-                  <p className="text-lg font-semibold">
-                    {showBalance ? formatCurrency(walletData.totalEarnings) : "••••"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="flex-1 bg-white/20 text-white border-white/30 hover:bg-white/30"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Recargar
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="flex-1 bg-white/20 text-white border-white/30 hover:bg-white/30"
-                >
-                  <PiggyBank className="h-4 w-4 mr-2" />
-                  Retirar
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Auto-withdrawal Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Configuración de Retiros</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Retiro Automático</p>
-                <p className="text-sm text-gray-500">Retira automáticamente cuando alcances RD$1,000</p>
+                <p className="text-xs text-brand-light">Total ganado</p>
+                <p className="font-bold">{showBalance ? formatCurrency(walletData.totalEarnings) : "••••"}</p>
               </div>
-              <Switch checked={autoWithdraw} onCheckedChange={setAutoWithdraw} />
             </div>
-
-            {autoWithdraw && (
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="h-4 w-4 text-blue-600" />
-                  <p className="text-sm font-medium text-blue-900">Método de retiro predeterminado</p>
-                </div>
-                <p className="text-sm text-blue-700">Banco Popular - Cuenta **** 4532</p>
-                <Button variant="link" size="sm" className="text-blue-600 p-0 h-auto">
-                  Cambiar método
+            <div className="flex gap-3 mt-4">
+              <Link href="/wallet/recargar" className="flex-1">
+                <Button className="w-full bg-brand-dark hover:bg-brand-deep">
+                  <Plus className="h-4 w-4 mr-1" /> Recargar
                 </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Transactions */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Transacciones Recientes</CardTitle>
-              <Button variant="ghost" size="sm">
-                Ver todas
-              </Button>
+              </Link>
+              <Link href="/wallet/retirar" className="flex-1">
+                <Button className="w-full bg-brand-dark hover:bg-brand-deep">
+                  <Download className="h-4 w-4 mr-1" /> Retirar
+                </Button>
+              </Link>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {walletData.recentTransactions.map((transaction) => (
-                <div key={transaction.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50">
-                  <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                    {getTransactionIcon(transaction.type)}
+          </div>
+        )}
+
+        {/* Info */}
+        <div className="bg-brand-extraLight border-l-4 border-brand-ui rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-brand-ui shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-brand-dark text-sm mb-1">¿Cómo recargar o retirar?</p>
+              <p className="text-xs text-brand-dark leading-relaxed">
+                <span className="font-bold">Recargar:</span> Apple Pay / Google Pay (simulado), Pago Móvil o
+                transferencia. Tarjeta bancaria en la app: próximamente con proveedor seguro.
+                <br />
+                <span className="font-bold">Retirar:</span> Transfiere tu saldo a tu cuenta bancaria registrada.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Auto-withdraw */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="font-bold text-gray-900 mb-3">Configuración de Retiros</p>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold text-gray-900">Retiro Automático</p>
+              <p className="text-xs text-gray-500">
+                Retira automáticamente cuando alcances RD${preferences?.autoWithdrawThreshold || 1000}
+              </p>
+            </div>
+            <Switch checked={preferences?.autoWithdraw || false} onCheckedChange={handleAutoWithdrawToggle} />
+          </div>
+          {preferences?.autoWithdraw && (
+            <div className="bg-blue-50 rounded-lg p-3 mt-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <ShieldCheck className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-bold text-blue-600">Método de retiro predeterminado</span>
+              </div>
+              <p className="text-xs text-blue-600">
+                {preferences.autoWithdrawMethodId
+                  ? paymentMethods.find((m) => m.id === preferences.autoWithdrawMethodId)?.name || "No configurado"
+                  : "No configurado"}
+              </p>
+              {/* NOTA: en mobile, "Cambiar método" es un TouchableOpacity sin onPress — no hace nada. Se porta como texto inerte. */}
+              <span className="text-xs font-bold text-blue-600 mt-1 inline-block opacity-60 cursor-default">Cambiar método</span>
+            </div>
+          )}
+        </div>
+
+        {/* Transactions */}
+        {transactions.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-bold text-gray-900">Transacciones Recientes</p>
+              {/* NOTA: mobile no tiene onPress en "Ver todas" — dead link, se porta como texto inerte. */}
+              <span className="text-xs font-bold text-gray-400 opacity-60 cursor-default">Ver todas</span>
+            </div>
+            <div className="divide-y">
+              {transactions.map((t) => (
+                <div key={t.id} className="flex items-center gap-3 py-2.5">
+                  <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <TransactionIcon type={t.type} />
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">{transaction.description}</p>
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                      <span>{transaction.date}</span>
-                      <span>•</span>
-                      <span className={getStatusColor(transaction.status)}>
-                        {transaction.status === "completed"
-                          ? "Completado"
-                          : transaction.status === "processing"
-                            ? "Procesando"
-                            : "Fallido"}
-                      </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{t.description}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{formatRelativeDate(t.createdAt)}</span>
+                      <span className={`text-xs ${statusColor(t.status)}`}>{getTransactionStatusLabel(t.status)}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`font-semibold ${transaction.amount > 0 ? "text-green-600" : "text-gray-900"}`}>
-                      {transaction.amount > 0 ? "+" : ""}
-                      {formatCurrency(Math.abs(transaction.amount))}
-                    </p>
-                  </div>
+                  <span className={`font-bold ${t.amount > 0 ? "text-brand-ui" : "text-gray-900"}`}>
+                    {t.amount > 0 ? "+" : ""}
+                    {formatCurrency(Math.abs(t.amount))}
+                  </span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        )}
 
-        {/* Payment Methods */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Métodos de Pago Guardados</CardTitle>
-              <Button variant="outline" size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar
-              </Button>
+        {/* Payment methods */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="font-bold text-gray-900">Métodos de pago</p>
+              <p className="text-xs text-gray-500">Transferencia, pago móvil y otros (tarjeta: próximamente)</p>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+            <Link href="/configuracion/pagos/agregar">
+              <Button size="sm" variant="outline" className="text-brand-ui border-brand-light bg-brand-extraLight hover:bg-brand-light">
+                <Plus className="h-4 w-4 mr-1" /> Agregar
+              </Button>
+            </Link>
+          </div>
+          {paymentMethods.length === 0 ? (
+            <div className="py-8 flex flex-col items-center text-center gap-1">
+              <CreditCard className="h-10 w-10 text-gray-300 mb-1" />
+              <p className="text-gray-600 font-medium text-sm">Sin métodos guardados</p>
+              <p className="text-xs text-gray-400">Agrega transferencia o pago móvil para retiros y pagos</p>
+            </div>
+          ) : (
+            <div className="divide-y">
               {paymentMethods.map((method) => (
-                <div key={method.id} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50">
-                  <div className="w-12 h-8 bg-gray-100 rounded flex items-center justify-center">
-                    <img src={method.logo || "/placeholder.svg"} alt={method.name} className="h-6" />
+                <div key={method.id} className="flex items-center gap-3 py-2.5">
+                  <div className="h-9 w-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                    <PaymentMethodIcon type={method.type} />
                   </div>
-
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-medium">{method.name}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold text-gray-900 truncate">{method.name}</span>
                       {method.isDefault && (
-                        <Badge className="bg-emerald-100 text-emerald-700 text-xs">Predeterminado</Badge>
+                        <span className="text-[10px] bg-brand-light text-brand-dark px-1.5 py-0.5 rounded shrink-0">Predeterminado</span>
                       )}
-                      {method.isVerified && <CheckCircle className="h-4 w-4 text-emerald-500" />}
+                      {method.isVerified && <CheckCircle2 className="h-3.5 w-3.5 text-brand-ui shrink-0" />}
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span>{method.bank}</span>
-                      {method.type === "card" && (
-                        <>
-                          <span>•</span>
-                          <span>Vence {method.expiry}</span>
-                        </>
-                      )}
-                      <span>•</span>
-                      <span>{method.lastUsed}</span>
-                    </div>
+                    <p className="text-xs text-gray-500 truncate">
+                      {method.type === "bank_transfer" && method.details.bankName}
+                      {method.type === "mobile_payment" && method.details.provider}
+                      {method.type === "cash" && method.details.preferredLocation}
+                      {method.lastUsed ? ` • ${formatRelativeDate(method.lastUsed)}` : ""}
+                    </p>
                   </div>
-
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
+                      <Button variant="ghost" size="icon" className="shrink-0">
+                        <MoreVertical className="h-4 w-4 text-gray-500" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem>
-                        <Edit className="h-4 w-4 mr-2" />
-                        Editar
+                      <DropdownMenuItem disabled={method.isDefault} onClick={() => handleSetDefault(method.id)}>
+                        {method.isDefault ? "Predeterminado ✓" : "Establecer como predeterminado"}
                       </DropdownMenuItem>
-                      {!method.isDefault && (
-                        <DropdownMenuItem>
-                          <Star className="h-4 w-4 mr-2" />
-                          Hacer predeterminado
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem className="text-red-600">
-                        <Trash2 className="h-4 w-4 mr-2" />
+                      <DropdownMenuItem className="text-red-600" onClick={() => setDeleteTarget(method)}>
                         Eliminar
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -399,106 +385,54 @@ export default function MetodosPagoPage() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
-        {/* Available Payment Options */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Opciones de Pago Disponibles</CardTitle>
-            <p className="text-sm text-gray-600">Métodos de pago populares en República Dominicana</p>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3">
-              {dominican_payment_options.map((option) => {
-                const IconComponent = option.icon
-                return (
-                  <div
-                    key={option.id}
-                    className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <IconComponent className="h-5 w-5 text-gray-600" />
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-medium">{option.name}</p>
-                        {option.popular && <Badge className="bg-blue-100 text-blue-700 text-xs">Popular</Badge>}
-                      </div>
-                      <p className="text-sm text-gray-500 mb-2">{option.description}</p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <DollarSign className="h-3 w-3" />
-                          <span>{option.fees}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          <span>{option.processingTime}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <Button variant="outline" size="sm">
-                      Agregar
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Security Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Shield className="h-5 w-5 text-emerald-600" />
-              Seguridad de Pagos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 text-emerald-500 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm">Encriptación SSL 256-bit</p>
-                  <p className="text-xs text-gray-500">Todos los datos de pago están protegidos</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 text-emerald-500 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm">Cumplimiento PCI DSS</p>
-                  <p className="text-xs text-gray-500">Estándares internacionales de seguridad</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 text-emerald-500 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm">Protección contra fraude</p>
-                  <p className="text-xs text-gray-500">Monitoreo 24/7 de transacciones</p>
-                </div>
+        {/* Security */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="h-5 w-5 text-brand-ui" />
+            <p className="font-bold text-gray-900">Seguridad de Pagos</p>
+          </div>
+          {[
+            { title: "Encriptación SSL 256-bit", desc: "Todos los datos de pago están protegidos" },
+            { title: "Cumplimiento PCI DSS", desc: "Estándares internacionales de seguridad" },
+            { title: "Protección contra fraude", desc: "Monitoreo 24/7 de transacciones" },
+          ].map((row) => (
+            <div key={row.title} className="flex items-start gap-2 mt-2">
+              <CheckCircle2 className="h-4 w-4 text-brand-ui shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-gray-900">{row.title}</p>
+                <p className="text-xs text-gray-500">{row.desc}</p>
               </div>
             </div>
-
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="h-4 w-4 text-blue-600" />
-                <p className="text-sm font-medium text-blue-900">Consejo de Seguridad</p>
-              </div>
-              <p className="text-sm text-blue-700">
-                Nunca compartas tu información de pago fuera de la aplicación RopaNova.
-              </p>
+          ))}
+          <div className="flex items-start gap-2 bg-blue-50 rounded-lg p-3 mt-3">
+            <ShieldAlert className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-blue-600">Consejo de Seguridad</p>
+              <p className="text-xs text-blue-600">Nunca compartas tu información de pago fuera de la aplicación RopaNova.</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
-      {/* Bottom spacing */}
-      <div className="h-20"></div>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar eliminación</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar &quot;{deleteTarget?.name}&quot;?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
