@@ -120,18 +120,18 @@ export function SafetyFeaturesCard({ sellerLocation, productPrice }: SafetyFeatu
     <Card className="bg-white shadow-sm">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Shield className="h-5 w-5 text-emerald-500" />
+          <Shield className="h-5 w-5 text-brand-ui" />
           Información de Seguridad
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* RopaNova Protection Badge */}
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+        <div className="bg-brand-extraLight border border-brand-light rounded-lg p-3">
           <div className="flex items-center gap-2 mb-2">
-            <CheckCircle className="h-5 w-5 text-emerald-600" />
-            <span className="font-medium text-emerald-800">Protección RopaNova</span>
+            <CheckCircle className="h-5 w-5 text-brand-dark" />
+            <span className="font-medium text-brand-deep">Protección RopaNova</span>
           </div>
-          <p className="text-sm text-emerald-700">Soporte 24/7 • Mediación de disputas • Verificación de vendedores</p>
+          <p className="text-sm text-brand-dark">Soporte 24/7 • Mediación de disputas • Verificación de vendedores</p>
         </div>
 
         {/* Payment Methods Preview */}
@@ -172,7 +172,7 @@ export function SafetyFeaturesCard({ sellerLocation, productPrice }: SafetyFeatu
           <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5 text-emerald-500" />
+                <Shield className="h-5 w-5 text-brand-ui" />
                 Guía Completa de Seguridad
               </DialogTitle>
             </DialogHeader>

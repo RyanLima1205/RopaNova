@@ -1,5 +1,6 @@
 "use client"
 
+import type React from "react"
 import { useEffect, useMemo, useState } from "react"
 import { Search, Heart, MessageCircle, User, Plus, Home, LayoutGrid, UserRound, Baby, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -9,27 +10,59 @@ import { Card, CardContent } from "@/components/ui/card"
 import Link from "next/link"
 import { formatPrice } from "@/lib/formatters"
 import { getProducts, formatProductsLoadError } from "@/lib/services/productService"
+import { checkIfFavorited, addToFavorites, removeFromFavorites } from "@/lib/services/productService"
+import { categories as categoriesData, getSubcategories, getCategoryName, getSubcategoryName } from "@/lib/categories"
+import { useAuth } from "@/contexts/AuthContext"
+import { useFavoriteProductIds } from "@/hooks/useFavoriteProductIds"
+import { toast } from "@/hooks/use-toast"
 import type { Product } from "@/lib/types"
 
-// Mismas 5 categorías que mobile-app/src/data/categories.ts
-const categories = [
-  { id: "Todo", name: "Todo", icon: LayoutGrid },
-  { id: "Mujer", name: "Mujer", icon: UserRound },
-  { id: "Hombre", name: "Hombre", icon: User },
-  { id: "Niño", name: "Niño", icon: Baby },
-  { id: "Libro", name: "Libro", icon: BookOpen },
-]
+// Mismos íconos que mobile-app/src/data/categories.ts (Ionicons name -> lucide)
+const categoryIcons: Record<string, typeof LayoutGrid> = {
+  "1": LayoutGrid,
+  "2": UserRound,
+  "3": User,
+  "4": Baby,
+  "5": BookOpen,
+}
 
-// Mismos 4 filtros rápidos que mobile-app/src/screens/HomeScreen.tsx (quickFilters)
+// Mismos 9 filtros rápidos que mobile-app/src/screens/HomeScreen.tsx (quickFilters)
 const quickFilters = [
   { id: "this-week", label: "Esta Semana", icon: "📅" },
   { id: "under-1000", label: "Menos de RD$1,000", icon: "💰" },
   { id: "designer", label: "Marcas Diseñador", icon: "✨" },
   { id: "plus-size", label: "Talla Grande", icon: "👗" },
+  { id: "new", label: "Nuevo", icon: "🆕" },
+  { id: "second-hand", label: "Segunda Mano", icon: "♻️" },
+  { id: "professional", label: "Ropa Profesional", icon: "💼" },
+  { id: "beach", label: "Ropa de Playa", icon: "🏖️" },
+  { id: "verified", label: "Vendedores Verificados", icon: "✅" },
 ]
 
+// Misma lista de marcas de diseñador que mobile-app/src/screens/HomeScreen.tsx.
+const DESIGNER_BRANDS = ["Gucci", "Louis Vuitton", "Prada", "Chanel", "Hermès", "Zara", "H&M"]
+
+/**
+ * Igual que mobile-app getVisibleQuickFilters(): en la categoría Libro solo aplican
+ * algunos filtros, y professional/beach se ocultan cuando hay subcategoría seleccionada.
+ * "plus-size", "professional", "beach" y "verified" son chips decorativos sin lógica de
+ * filtro asociada en mobile tampoco (no tienen case en el switch) — se portan igual.
+ */
+function getVisibleQuickFilters(selectedCategory: string, selectedSubcategory: string | null) {
+  if (selectedCategory === "5") {
+    return quickFilters.filter((f) => ["this-week", "under-1000", "new", "second-hand", "verified"].includes(f.id))
+  }
+  if (selectedSubcategory) {
+    return quickFilters.filter((f) => f.id !== "professional" && f.id !== "beach")
+  }
+  return quickFilters
+}
+
 export default function HomePage() {
-  const [selectedCategory, setSelectedCategory] = useState("Todo")
+  const { user } = useAuth()
+  const { favoriteProductIds, refreshFavoriteProductIds } = useFavoriteProductIds()
+  const [selectedCategory, setSelectedCategory] = useState("1")
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null)
   const [activeQuickFilters, setActiveQuickFilters] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [products, setProducts] = useState<Product[]>([])
@@ -54,31 +87,74 @@ export default function HomePage() {
     }
   }, [])
 
+  const handleCategoryPress = (categoryId: string) => {
+    setSelectedCategory(categoryId)
+    setSelectedSubcategory(null)
+  }
+
+  const handleSubcategoryPress = (subcategoryId: string) => {
+    setSelectedSubcategory((prev) => (prev === subcategoryId ? null : subcategoryId))
+  }
+
   const toggleQuickFilter = (id: string) => {
     setActiveQuickFilters((prev) => (prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]))
   }
 
-  // Misma lista de marcas de diseñador que mobile-app/src/screens/HomeScreen.tsx.
-  // Nota: "Talla Grande" no filtra nada todavía en mobile tampoco (sin caso en el switch) — se
-  // deja como chip seleccionable sin efecto, igual que en la app.
-  const DESIGNER_BRANDS = ["Gucci", "Louis Vuitton", "Prada", "Chanel", "Hermès", "Zara", "H&M"]
+  const handleToggleFavorite = async (e: React.MouseEvent, product: Product) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!user?.id) {
+      toast({ title: "Inicia sesión para agregar a favoritos" })
+      return
+    }
+    const isFavorited = favoriteProductIds.includes(product.id)
+    try {
+      if (isFavorited) {
+        await removeFromFavorites(product.id, user.id)
+      } else {
+        await addToFavorites(product.id, user.id, product)
+      }
+      await refreshFavoriteProductIds()
+    } catch {
+      toast({ title: "No se pudo actualizar tus favoritos", variant: "destructive" })
+    }
+  }
 
   const featuredItems = useMemo(() => {
     const oneWeekAgo = new Date()
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+    const categoryName = getCategoryName(selectedCategory)
+    const subcategoryName = selectedSubcategory ? getSubcategoryName(selectedCategory, selectedSubcategory) : null
 
     return products.filter((p) => {
-      const matchesCategory = selectedCategory === "Todo" || p.category === selectedCategory
-      const matchesSearch = !searchQuery.trim() || p.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      const matchesCategory = selectedCategory === "1" || p.category === categoryName
+      const matchesSubcategory = !subcategoryName || p.subcategory === subcategoryName
+      const q = searchQuery.trim().toLowerCase()
+      const matchesSearch = !q || p.title.toLowerCase().includes(q) || (p.brand ?? "").toLowerCase().includes(q)
       const matchesUnder1000 = !activeQuickFilters.includes("under-1000") || p.price < 1000
       const matchesDesigner =
         !activeQuickFilters.includes("designer") ||
         DESIGNER_BRANDS.some((brand) => p.brand?.toLowerCase().includes(brand.toLowerCase()))
       const matchesThisWeek =
         !activeQuickFilters.includes("this-week") || (p.createdAt && new Date(p.createdAt) >= oneWeekAgo)
-      return matchesCategory && matchesSearch && matchesUnder1000 && matchesDesigner && matchesThisWeek
+      const matchesNew = !activeQuickFilters.includes("new") || p.condition?.toLowerCase().includes("nuevo")
+      const matchesSecondHand =
+        !activeQuickFilters.includes("second-hand") || !p.condition?.toLowerCase().includes("nuevo")
+      return (
+        matchesCategory &&
+        matchesSubcategory &&
+        matchesSearch &&
+        matchesUnder1000 &&
+        matchesDesigner &&
+        matchesThisWeek &&
+        matchesNew &&
+        matchesSecondHand
+      )
     })
-  }, [products, selectedCategory, searchQuery, activeQuickFilters])
+  }, [products, selectedCategory, selectedSubcategory, searchQuery, activeQuickFilters])
+
+  const visibleSubcategories = selectedCategory !== "1" ? getSubcategories(selectedCategory) : []
+  const visibleQuickFilters = getVisibleQuickFilters(selectedCategory, selectedSubcategory)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -88,12 +164,16 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-3">
             <img src="/ropanova-logo.svg" alt="RopaNova" className="h-9 w-auto" />
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm">
-                <Heart className="h-5 w-5 text-gray-600" />
-              </Button>
-              <Button variant="ghost" size="sm">
-                <MessageCircle className="h-5 w-5 text-gray-600" />
-              </Button>
+              <Link href="/favoritos">
+                <Button variant="ghost" size="sm">
+                  <Heart className="h-5 w-5 text-gray-600" />
+                </Button>
+              </Link>
+              <Link href="/mensajes">
+                <Button variant="ghost" size="sm">
+                  <MessageCircle className="h-5 w-5 text-gray-600" />
+                </Button>
+              </Link>
             </div>
           </div>
 
@@ -119,13 +199,13 @@ export default function HomePage() {
       {/* Category Tabs — íconos circulares, igual que mobile */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex overflow-x-auto gap-1 scrollbar-hide">
-          {categories.map((category) => {
+          {categoriesData.map((category) => {
             const active = selectedCategory === category.id
-            const Icon = category.icon
+            const Icon = categoryIcons[category.id] ?? LayoutGrid
             return (
               <button
                 key={category.id}
-                onClick={() => setSelectedCategory(category.id)}
+                onClick={() => handleCategoryPress(category.id)}
                 className="flex flex-col items-center w-[68px] shrink-0"
               >
                 <div
@@ -144,10 +224,32 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Quick Filters — mismos 4 chips que mobile */}
+      {/* Subcategory Tabs — solo si hay una categoría específica seleccionada */}
+      {visibleSubcategories.length > 0 && (
+        <div className="bg-white border-b border-gray-200 px-4 py-3">
+          <div className="flex overflow-x-auto gap-2 scrollbar-hide">
+            {visibleSubcategories.map((sub) => {
+              const active = selectedSubcategory === sub.id
+              return (
+                <button
+                  key={sub.id}
+                  onClick={() => handleSubcategoryPress(sub.id)}
+                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs shrink-0 transition-colors ${
+                    active ? "bg-brand-ui text-white" : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {sub.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Filters */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex overflow-x-auto gap-2 scrollbar-hide">
-          {quickFilters.map((filter) => {
+          {visibleQuickFilters.map((filter) => {
             const active = activeQuickFilters.includes(filter.id)
             return (
               <button
@@ -167,7 +269,9 @@ export default function HomePage() {
 
       {/* Featured Items */}
       <div className="p-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Artículos Destacados</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          {selectedCategory === "1" ? "Artículos Destacados" : `${featuredItems.length} productos encontrados`}
+        </h3>
         {loading && <p className="text-sm text-gray-500 text-center py-8">Cargando productos…</p>}
         {!loading && loadError && <p className="text-sm text-red-600 text-center py-8">{loadError}</p>}
         {!loading && !loadError && featuredItems.length === 0 && (
@@ -184,8 +288,15 @@ export default function HomePage() {
                       alt={item.title}
                       className="w-full h-40 object-cover"
                     />
-                    <Button variant="ghost" size="sm" className="absolute top-2 right-2 p-1 bg-white/80 hover:bg-white">
-                      <Heart className="h-4 w-4 text-gray-600" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-2 right-2 p-1 bg-white/80 hover:bg-white"
+                      onClick={(e) => handleToggleFavorite(e, item)}
+                    >
+                      <Heart
+                        className={`h-4 w-4 ${favoriteProductIds.includes(item.id) ? "fill-red-500 text-red-500" : "text-gray-600"}`}
+                      />
                     </Button>
                     <div className="absolute bottom-2 right-2">
                       <Badge variant="secondary" className="text-xs bg-white/90">

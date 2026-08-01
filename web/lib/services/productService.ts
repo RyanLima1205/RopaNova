@@ -1,7 +1,78 @@
 import { Product } from "../types"
-import { getFirestore, collection, doc, getDoc, getDocsFromServer } from "firebase/firestore"
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocsFromServer,
+  serverTimestamp,
+  writeBatch,
+  increment,
+  runTransaction,
+} from "firebase/firestore"
 import { app } from "../firebaseConfig"
 import { logger } from "../logger"
+import { getReviewsBySellerId, computeSellerReviewStats } from "./reviewService"
+
+/** Mismos umbrales que mobile-app ProductDetailScreen.tsx (getConditionLabel). */
+function conditionLabel(value: number): string {
+  if (value >= 9) return "Excelente"
+  if (value >= 7) return "Bueno"
+  if (value >= 5) return "Regular"
+  return "Malo"
+}
+
+/** Verifica si el usuario ya marcó este producto como favorito (doc id determinístico `${userId}_${productId}`). */
+export async function checkIfFavorited(productId: string, userId: string): Promise<boolean> {
+  if (!userId || userId === "guest") return false
+  try {
+    const db = getFirestore(app)
+    const favSnap = await getDoc(doc(db, "favorites", `${userId}_${productId}`))
+    return favSnap.exists()
+  } catch {
+    return false
+  }
+}
+
+export async function addToFavorites(productId: string, userId: string, product: Product): Promise<void> {
+  const db = getFirestore(app)
+  const favoriteData = {
+    userId,
+    productId,
+    productTitle: product.title,
+    productPrice: product.price,
+    productImage: product.images?.[0] || product.image,
+    productBrand: product.brand,
+    createdAt: serverTimestamp(),
+    addedAt: serverTimestamp(),
+  }
+  const batch = writeBatch(db)
+  batch.set(doc(db, "favorites", `${userId}_${productId}`), favoriteData)
+  batch.update(doc(db, "products", productId), { favoriteCount: increment(1) })
+  await batch.commit()
+}
+
+/**
+ * Transacción: solo decrementa favoriteCount si prev > 0 (evita violar la regla
+ * favoriteCount >= 0 de firestore.rules cuando los datos ya estaban desincronizados).
+ */
+export async function removeFromFavorites(productId: string, userId: string): Promise<void> {
+  const db = getFirestore(app)
+  const favRef = doc(db, "favorites", `${userId}_${productId}`)
+  const productRef = doc(db, "products", productId)
+  await runTransaction(db, async (transaction) => {
+    const favSnap = await transaction.get(favRef)
+    const productSnap = await transaction.get(productRef)
+    if (!favSnap.exists()) return
+    transaction.delete(favRef)
+    if (!productSnap.exists()) return
+    const prev = productSnap.data()?.favoriteCount
+    const prevNum = typeof prev === "number" ? prev : 0
+    if (prevNum > 0) {
+      transaction.update(productRef, { favoriteCount: increment(-1) })
+    }
+  })
+}
 
 /** Subtítulo mostrado bajo «No se pudieron cargar los productos» (sin detalles técnicos). */
 export function formatProductsLoadError(error: unknown): string {
@@ -159,6 +230,20 @@ export async function getProduct(id: string): Promise<Product | null> {
       }
     }
 
+    // Rating/reviewCount reales via reviewService — el resto de las stats del vendedor
+    // (totalSales, responseRate, averageResponseTime) no tienen fuente de datos real
+    // todavía en ninguna de las dos apps, así que se dejan como estaban.
+    let sellerRatingStats = { averageRating: 0, reviewCount: 0 }
+    if (productData.userId) {
+      try {
+        const sellerReviews = await getReviewsBySellerId(productData.userId)
+        const stats = computeSellerReviewStats(sellerReviews)
+        sellerRatingStats = { averageRating: stats.averageRating, reviewCount: stats.reviewCount }
+      } catch {
+        // deja rating/reviewCount en 0 si falla
+      }
+    }
+
     const product: Product = {
       id: productDoc.id,
       title: productData.titulo || productData.title || "",
@@ -236,8 +321,8 @@ export async function getProduct(id: string): Promise<Product | null> {
             storeName: sellerData.storeName || "",
             username: sellerData.username || "@vendedor",
             avatar: sellerData.avatar || "",
-            rating: sellerData.rating || 4.5,
-            reviewCount: sellerData.reviewCount || 0,
+            rating: sellerRatingStats.averageRating,
+            reviewCount: sellerRatingStats.reviewCount,
             totalSales: sellerData.totalSales || 0,
             responseRate: sellerData.responseRate || 90,
             averageResponseTime: sellerData.averageResponseTime || "2 horas",
@@ -283,8 +368,8 @@ export async function getProduct(id: string): Promise<Product | null> {
             storeName: "",
             username: "@vendedor",
             avatar: "",
-            rating: 4.5,
-            reviewCount: 0,
+            rating: sellerRatingStats.averageRating,
+            reviewCount: sellerRatingStats.reviewCount,
             totalSales: 0,
             responseRate: 90,
             averageResponseTime: "2 horas",
@@ -300,14 +385,32 @@ export async function getProduct(id: string): Promise<Product | null> {
             accountType: "",
           },
       conditionDetails: {
-        overall: productData.condicionGeneral || "Nuevo",
-        rating: productData.estadoGeneral || 5,
-        details: [
-          { aspect: "Tela", condition: "Perfecta", description: "Sin manchas, roturas o desgaste" },
-          { aspect: "Cremallera", condition: "Perfecta", description: "Funciona perfectamente, sin problemas" },
-          { aspect: "Costuras", condition: "Perfecta", description: "Todas las costuras intactas" },
-          { aspect: "Etiquetas", condition: "Incluidas", description: "Etiqueta original de la marca presente" },
-        ],
+        overall: productData.condicionGeneral || productData.condition || "Usado",
+        // estadoGeneral es 0-10 en Firestore; ConditionDetailsCard espera 0-5 (estrellas).
+        rating: typeof productData.estadoGeneral === "number" ? productData.estadoGeneral / 2 : 0,
+        details: (() => {
+          const rows: { aspect: string; condition: string; description: string }[] = []
+          if (typeof productData.estadoTelaMaterial === "number" && productData.estadoTelaMaterial > 0) {
+            rows.push({
+              aspect: "Tela / Material",
+              condition: conditionLabel(productData.estadoTelaMaterial),
+              description: productData.notasSobreElEstado || "Evaluación de la tela y el material del producto.",
+            })
+          }
+          if (productData.autenticidad) {
+            rows.push({
+              aspect: "Autenticidad",
+              condition: String(productData.autenticidad),
+              description: "Declarado por el vendedor al momento de publicar.",
+            })
+          }
+          rows.push({
+            aspect: "Defectos específicos",
+            condition: productData.defectosEspecificos ? "Reportados" : "Ninguno reportado",
+            description: productData.defectosEspecificos || "El vendedor no reportó defectos adicionales.",
+          })
+          return rows
+        })(),
         photos: productData.images || [],
       },
     }

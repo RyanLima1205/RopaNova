@@ -67,7 +67,7 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
   const getBadgeColor = (type: string) => {
     switch (type) {
       case "verified":
-        return "bg-emerald-50 text-emerald-600 border-emerald-200"
+        return "bg-brand-extraLight text-brand-dark border-brand-light"
       case "fast_response":
         return "bg-blue-50 text-blue-600 border-blue-200"
       case "top_seller":
@@ -89,7 +89,7 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
     <Card className="bg-white shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center gap-2">
-          <MessageCircle className="h-5 w-5 text-emerald-500" />
+          <MessageCircle className="h-5 w-5 text-brand-ui" />
           Vendedor
         </CardTitle>
       </CardHeader>
@@ -107,7 +107,7 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
               </AvatarFallback>
             </Avatar>
             {seller.verified && (
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-brand-ui rounded-full flex items-center justify-center">
                 <Shield className="h-3 w-3 text-white" />
               </div>
             )}
@@ -152,7 +152,7 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
         <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg">
           <div className="text-center">
             <div className="flex items-center justify-center gap-1 mb-1">
-              <MessageCircle className="h-4 w-4 text-emerald-500" />
+              <MessageCircle className="h-4 w-4 text-brand-ui" />
               <span className="text-sm font-medium text-gray-900">{seller.responseRate}%</span>
             </div>
             <p className="text-xs text-gray-600">Tasa de respuesta</p>
@@ -175,7 +175,7 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
 
         {/* Action Buttons */}
         <div className="space-y-2">
-          <Button className="w-full bg-emerald-500 hover:bg-emerald-600">
+          <Button className="w-full bg-brand-ui hover:bg-brand-dark">
             <MessageCircle className="h-4 w-4 mr-2" />
             Enviar Mensaje
           </Button>
@@ -229,8 +229,8 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
                   <div>
                     <h4 className="font-medium mb-3">Estadísticas</h4>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-3 bg-emerald-50 rounded-lg">
-                        <p className="text-xl font-bold text-emerald-600">{seller.totalSales}</p>
+                      <div className="text-center p-3 bg-brand-extraLight rounded-lg">
+                        <p className="text-xl font-bold text-brand-ui">{seller.totalSales}</p>
                         <p className="text-xs text-gray-600">Ventas totales</p>
                       </div>
                       <div className="text-center p-3 bg-blue-50 rounded-lg">
@@ -270,7 +270,7 @@ export function SellerProfileCard({ seller }: SellerProfileCardProps) {
                         Ver todas las reseñas ({seller.reviewCount})
                       </Button>
                     </Link>
-                    <Link href={`/vendedor/${seller.id}/productos`}>
+                    <Link href={`/vendedor/${seller.id}`}>
                       <Button variant="outline" className="w-full bg-transparent">
                         Ver otros productos
                       </Button>

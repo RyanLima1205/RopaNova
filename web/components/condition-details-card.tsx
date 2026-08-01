@@ -164,7 +164,7 @@ export function ConditionDetailsCard({ conditionDetails }: ConditionDetailsCardP
                             key={index}
                             onClick={() => setSelectedPhoto(index)}
                             className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 ${
-                              selectedPhoto === index ? "border-emerald-500" : "border-gray-200"
+                              selectedPhoto === index ? "border-brand-ui" : "border-gray-200"
                             }`}
                           >
                             <Image
@@ -204,12 +204,12 @@ export function ConditionDetailsCard({ conditionDetails }: ConditionDetailsCardP
         )}
 
         {/* Trust Indicator */}
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+        <div className="p-3 bg-brand-extraLight border border-brand-light rounded-lg">
           <div className="flex items-center gap-2 mb-1">
-            <CheckCircle className="h-4 w-4 text-emerald-600" />
-            <span className="font-medium text-emerald-800 text-sm">Estado Verificado</span>
+            <CheckCircle className="h-4 w-4 text-brand-dark" />
+            <span className="font-medium text-brand-deep text-sm">Estado Verificado</span>
           </div>
-          <p className="text-xs text-emerald-700">
+          <p className="text-xs text-brand-dark">
             El vendedor ha proporcionado fotos detalladas y descripción completa del estado del producto.
           </p>
         </div>
