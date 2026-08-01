@@ -1,158 +1,134 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Building2, Eye, EyeOff, Clock, Shield, Info } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff, Building2, Loader2, Clock, ShieldCheck, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Card, CardContent } from "@/components/ui/card"
+import { toast } from "@/hooks/use-toast"
+import { RequireAuth } from "@/components/require-auth"
+import { useAuth } from "@/contexts/AuthContext"
+import {
+  getWalletData,
+  getPaymentMethods,
+  getPaymentMethodDisplayName,
+  addTransaction,
+  updateWalletBalance,
+  type PaymentMethod,
+} from "@/lib/services/paymentService"
 
-// Mock bank accounts
-const bankAccounts = [
-  {
-    id: 1,
-    bankName: "Banco Popular Dominicano",
-    accountNumber: "****-****-****-4532",
-    accountType: "Cuenta Corriente",
-    isDefault: true,
-    processingTime: "1-2 días hábiles",
-    fee: 25,
-    minAmount: 500,
-    maxAmount: 25000,
-  },
-  {
-    id: 2,
-    bankName: "Banco de Reservas",
-    accountNumber: "****-****-****-8901",
-    accountType: "Cuenta de Ahorros",
-    isDefault: false,
-    processingTime: "2-3 días hábiles",
-    fee: 30,
-    minAmount: 1000,
-    maxAmount: 50000,
-  },
-  {
-    id: 3,
-    bankName: "BHD León",
-    accountNumber: "****-****-****-2345",
-    accountType: "Cuenta Corriente",
-    isDefault: false,
-    processingTime: "1-2 días hábiles",
-    fee: 20,
-    minAmount: 500,
-    maxAmount: 30000,
-  },
-]
+const MIN_WITHDRAW_AMOUNT = 500
 
-// Mock wallet balance
-const walletBalance = 3250.75
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP", minimumFractionDigits: 0 }).format(amount)
+}
 
-export default function WithdrawMoneyPage() {
+export default function RetirarPageGate() {
+  return (
+    <RequireAuth>
+      <RetirarPage />
+    </RequireAuth>
+  )
+}
+
+function RetirarPage() {
+  const { user } = useAuth()
   const [amount, setAmount] = useState("")
-  const [selectedAccount, setSelectedAccount] = useState(1)
+  const [bankAccounts, setBankAccounts] = useState<PaymentMethod[]>([])
+  const [loadingAccounts, setLoadingAccounts] = useState(true)
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
   const [showBalance, setShowBalance] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [walletBalance, setWalletBalance] = useState(0)
 
-  const selectedBankAccount = bankAccounts.find((account) => account.id === selectedAccount)
+  useEffect(() => {
+    if (!user?.id) return
+    getWalletData(user.id).then((wallet) => {
+      if (wallet) setWalletBalance(wallet.balance)
+    })
+    setLoadingAccounts(true)
+    getPaymentMethods(user.id).then((methods) => {
+      const banks = methods.filter((m) => m.type === "bank_transfer")
+      setBankAccounts(banks)
+      setSelectedAccount((current) => {
+        if (current && banks.some((b) => b.id === current)) return current
+        return banks.find((b) => b.isDefault)?.id ?? banks[0]?.id ?? null
+      })
+      setLoadingAccounts(false)
+    })
+  }, [user?.id])
+
+  const selectedBankAccount = bankAccounts.find((a) => a.id === selectedAccount)
   const numericAmount = Number.parseFloat(amount) || 0
-  const fee = selectedBankAccount ? selectedBankAccount.fee : 0
-  const totalDeduction = numericAmount + fee
-  const remainingBalance = walletBalance - totalDeduction
+  const remainingBalance = walletBalance - numericAmount
+  const isValidAmount = numericAmount >= MIN_WITHDRAW_AMOUNT && numericAmount <= walletBalance && !!selectedAccount
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-DO", {
-      style: "currency",
-      currency: "DOP",
-      minimumFractionDigits: 0,
-    }).format(amount)
-  }
-
-  const handleMaxAmount = () => {
-    const maxPossible = Math.min(
-      walletBalance - (selectedBankAccount?.fee || 0),
-      selectedBankAccount?.maxAmount || 25000,
-    )
-    setAmount(Math.max(0, maxPossible).toString())
-  }
+  const handleMaxAmount = () => setAmount(String(Math.max(0, walletBalance)))
 
   const handleWithdraw = async () => {
-    if (!amount || !isValidAmount) return
-
+    if (!amount || !isValidAmount || !selectedAccount || !user?.id) return
     setIsProcessing(true)
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false)
+    try {
+      const accountLabel = selectedBankAccount ? getPaymentMethodDisplayName(selectedBankAccount) : "cuenta bancaria"
+      await addTransaction(user.id, {
+        userId: user.id,
+        type: "withdrawal",
+        description: `Retiro a ${accountLabel}`,
+        amount: -numericAmount,
+        status: "processing",
+        paymentMethodId: selectedAccount,
+      })
+      await updateWalletBalance(user.id, numericAmount, "subtract")
       setShowConfirmation(true)
-    }, 2000)
+    } catch {
+      toast({ title: "No se pudo procesar el retiro. Intenta de nuevo.", variant: "destructive" })
+    } finally {
+      setIsProcessing(false)
+    }
   }
-
-  const isValidAmount =
-    numericAmount >= (selectedBankAccount?.minAmount || 500) &&
-    numericAmount <= (selectedBankAccount?.maxAmount || 25000) &&
-    totalDeduction <= walletBalance
 
   if (showConfirmation) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <header className="bg-white shadow-sm sticky top-0 z-40">
-          <div className="px-4 py-3 flex items-center gap-3">
-            <Link href="/wallet">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="font-semibold text-gray-900">Retiro Solicitado</h1>
-          </div>
-        </header>
-
-        <div className="p-4">
-          <Card className="max-w-md mx-auto">
-            <CardContent className="p-8 text-center">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+          <Link href="/wallet">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <h1 className="font-semibold text-gray-900">Retiro Solicitado</h1>
+        </div>
+        <div className="p-4 max-w-md mx-auto">
+          <Card className="mt-6">
+            <CardContent className="p-8 flex flex-col items-center text-center">
+              <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mb-4">
                 <Clock className="h-8 w-8 text-blue-600" />
               </div>
-
               <h2 className="text-xl font-bold text-gray-900 mb-2">¡Retiro Solicitado!</h2>
-              <p className="text-gray-600 mb-6">
+              <p className="text-sm text-gray-500 mb-6">
                 Tu solicitud de retiro por {formatCurrency(numericAmount)} está siendo procesada
               </p>
-
-              <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Monto a retirar:</span>
-                  <span className="font-medium">{formatCurrency(numericAmount)}</span>
+              <div className="w-full bg-gray-50 rounded-lg p-4 space-y-2 mb-6">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Monto a retirar:</span>
+                  <span className="font-medium text-gray-900">{formatCurrency(numericAmount)}</span>
                 </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Comisión:</span>
-                  <span className="font-medium">{formatCurrency(fee)}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Banco destino:</span>
-                  <span className="font-medium text-sm">{selectedBankAccount?.bankName}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t">
-                  <span className="text-sm font-medium">Tiempo estimado:</span>
-                  <span className="font-medium text-blue-600">{selectedBankAccount?.processingTime}</span>
+                <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
+                  <span className="text-gray-500">Cuenta destino:</span>
+                  <span className="font-medium text-gray-900">{selectedBankAccount ? getPaymentMethodDisplayName(selectedBankAccount) : ""}</span>
                 </div>
               </div>
-
-              <Alert className="mb-6 text-left">
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  Recibirás una notificación cuando el dinero esté disponible en tu cuenta bancaria. Los retiros se
-                  procesan en días hábiles de 9:00 AM a 5:00 PM.
-                </AlertDescription>
-              </Alert>
-
-              <div className="space-y-3">
+              <div className="w-full flex items-start gap-2 bg-blue-50 rounded-lg p-3 mb-6">
+                <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 leading-relaxed text-left">
+                  El monto aparecerá en tu cuenta bancaria en los próximos 2 días hábiles (lunes a viernes, de 9:00 AM a 5:00 PM).
+                </p>
+              </div>
+              <div className="w-full space-y-3">
                 <Link href="/wallet">
-                  <Button className="w-full bg-blue-500 hover:bg-blue-600">Ver mi Wallet</Button>
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700">Ver mi Wallet</Button>
                 </Link>
                 <Link href="/">
                   <Button variant="outline" className="w-full bg-transparent">
@@ -168,222 +144,162 @@ export default function WithdrawMoneyPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="px-4 py-3 flex items-center gap-3">
-          <Link href="/wallet">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="font-semibold text-gray-900">Retirar Dinero</h1>
+    <div className="min-h-screen bg-gray-50 pb-8">
+      <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+        <Link href="/wallet">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <h1 className="font-semibold text-gray-900">Retirar Dinero</h1>
+      </div>
+
+      <div className="p-4 max-w-md mx-auto space-y-4">
+        {/* Balance */}
+        <div className="bg-blue-600 rounded-2xl p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-blue-100 text-sm">Saldo disponible</span>
+            <button onClick={() => setShowBalance(!showBalance)}>
+              {showBalance ? <EyeOff className="h-4 w-4 text-blue-100" /> : <Eye className="h-4 w-4 text-blue-100" />}
+            </button>
+          </div>
+          <p className="text-3xl font-bold mb-3">{showBalance ? formatCurrency(walletBalance) : "••••••"}</p>
+          {amount && isValidAmount && (
+            <div className="bg-white/20 rounded-lg p-3">
+              <p className="text-xs text-white/90 mb-0.5">Saldo después del retiro:</p>
+              <p className="text-sm font-medium">{showBalance ? formatCurrency(remainingBalance) : "••••"}</p>
+            </div>
+          )}
         </div>
-      </header>
 
-      <div className="p-4 space-y-6">
-        {/* Available Balance */}
-        <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-blue-100 text-sm">Saldo disponible</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowBalance(!showBalance)}
-                className="h-6 w-6 text-blue-100 hover:bg-blue-400/20"
-              >
-                {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+        {/* Amount */}
+        <Card>
+          <CardContent className="p-5">
+            <p className="font-bold text-gray-900 mb-4">¿Cuánto quieres retirar?</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">Monto a retirar</p>
+            <div className="relative mb-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">RD$</span>
+              <Input
+                placeholder="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                inputMode="numeric"
+                className="pl-11 text-lg font-medium"
+              />
             </div>
-            <p className="text-3xl font-bold mb-4">{showBalance ? formatCurrency(walletBalance) : "••••••"}</p>
-
-            {amount && isValidAmount && (
-              <div className="bg-blue-400/20 rounded-lg p-3">
-                <div className="flex justify-between text-sm">
-                  <span>Saldo después del retiro:</span>
-                  <span className="font-medium">{showBalance ? formatCurrency(remainingBalance) : "••••"}</span>
-                </div>
-              </div>
+            {amount && !isValidAmount && (
+              <p className="text-xs text-red-600 mb-3">
+                {numericAmount > walletBalance
+                  ? "Saldo insuficiente"
+                  : !selectedAccount
+                    ? "Selecciona una cuenta bancaria destino"
+                    : `El monto mínimo a retirar es ${formatCurrency(MIN_WITHDRAW_AMOUNT)}`}
+              </p>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Amount Input */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">¿Cuánto quieres retirar?</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="amount">Monto a retirar</Label>
-              <div className="relative mt-1">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">RD$</span>
-                <Input
-                  id="amount"
-                  type="number"
-                  placeholder="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="pl-12 text-lg font-medium"
-                  min={selectedBankAccount?.minAmount || 500}
-                  max={Math.min(walletBalance, selectedBankAccount?.maxAmount || 25000)}
-                />
-              </div>
-              {amount && !isValidAmount && (
-                <p className="text-sm text-red-600 mt-1">
-                  {totalDeduction > walletBalance
-                    ? "Saldo insuficiente (incluye comisión)"
-                    : `El monto debe estar entre ${formatCurrency(selectedBankAccount?.minAmount || 500)} y ${formatCurrency(selectedBankAccount?.maxAmount || 25000)}`}
-                </p>
-              )}
-            </div>
-
-            <Button variant="outline" size="sm" onClick={handleMaxAmount} className="bg-transparent">
+            <button onClick={handleMaxAmount} className="mt-2 px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700">
               Retirar máximo disponible
-            </Button>
+            </button>
           </CardContent>
         </Card>
 
-        {/* Bank Account Selection */}
+        {/* Bank accounts */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Cuenta bancaria destino</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {bankAccounts.map((account) => (
-              <div
-                key={account.id}
-                className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                  selectedAccount === account.id ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:bg-gray-50"
-                }`}
-                onClick={() => setSelectedAccount(account.id)}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Building2 className="h-5 w-5 text-gray-600" />
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-sm">{account.bankName}</p>
-                      {account.isDefault && <Badge className="bg-blue-100 text-blue-700 text-xs">Predeterminada</Badge>}
-                    </div>
-                    <p className="text-xs text-gray-600 mb-1">
-                      {account.accountType} • {account.accountNumber}
-                    </p>
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3 w-3 text-gray-400" />
-                        <span className="text-xs text-gray-600">{account.processingTime}</span>
-                      </div>
-                      <span className="text-xs text-gray-600">Comisión: {formatCurrency(account.fee)}</span>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`w-4 h-4 rounded-full border-2 ${
-                      selectedAccount === account.id ? "border-blue-500 bg-blue-500" : "border-gray-300"
+          <CardContent className="p-5">
+            <p className="font-bold text-gray-900 mb-4">Cuenta bancaria destino</p>
+            {loadingAccounts ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+              </div>
+            ) : bankAccounts.length === 0 ? (
+              <div className="flex flex-col items-center py-6 text-center gap-1">
+                <Building2 className="h-10 w-10 text-gray-300 mb-1" />
+                <p className="text-gray-600 font-medium text-sm">Aún no tienes cuentas bancarias</p>
+                <p className="text-xs text-gray-400">Agrega una cuenta bancaria para poder retirar tu saldo</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {bankAccounts.map((account) => (
+                  <button
+                    key={account.id}
+                    onClick={() => setSelectedAccount(account.id)}
+                    className={`w-full flex items-center gap-3 p-4 border rounded-lg text-left ${
+                      selectedAccount === account.id ? "border-blue-600 bg-blue-50" : "border-gray-200"
                     }`}
                   >
-                    {selectedAccount === account.id && (
-                      <div className="w-full h-full rounded-full bg-white scale-50"></div>
-                    )}
-                  </div>
-                </div>
+                    <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                      <Building2 className="h-5 w-5 text-gray-500" />
+                    </div>
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 truncate">{getPaymentMethodDisplayName(account)}</span>
+                      {account.isDefault && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">Predeterminada</span>}
+                    </div>
+                    <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${selectedAccount === account.id ? "border-blue-600 bg-blue-600" : "border-gray-300"}`} />
+                  </button>
+                ))}
               </div>
-            ))}
-
+            )}
             <Link href="/configuracion/pagos/agregar">
-              <Button variant="outline" className="w-full mt-3 bg-transparent">
-                + Agregar nueva cuenta bancaria
-              </Button>
+              <button className="w-full mt-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-600">+ Agregar nueva cuenta bancaria</button>
             </Link>
           </CardContent>
         </Card>
 
-        {/* Transaction Summary */}
+        {/* Summary */}
         {amount && isValidAmount && (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Resumen del retiro</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Monto a retirar:</span>
-                  <span className="font-medium">{formatCurrency(numericAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Comisión:</span>
-                  <span className="font-medium">{formatCurrency(fee)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total deducido del wallet:</span>
-                  <span className="font-medium text-red-600">{formatCurrency(totalDeduction)}</span>
-                </div>
-                <div className="flex justify-between pt-3 border-t">
-                  <span className="font-medium">Recibirás en tu cuenta:</span>
-                  <span className="font-bold text-blue-600 text-lg">{formatCurrency(numericAmount)}</span>
-                </div>
+            <CardContent className="p-5">
+              <p className="font-bold text-gray-900 mb-4">Resumen del retiro</p>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-500">Monto a retirar:</span>
+                <span className="font-medium text-gray-900">{formatCurrency(numericAmount)}</span>
               </div>
-
-              <Alert className="mt-4">
-                <Shield className="h-4 w-4" />
-                <AlertDescription>
-                  Los retiros se procesan en días hábiles de 9:00 AM a 5:00 PM. Tiempo estimado:{" "}
-                  {selectedBankAccount?.processingTime}.
-                </AlertDescription>
-              </Alert>
+              <div className="flex justify-between border-t border-gray-200 pt-3 mb-4">
+                <span className="font-medium text-gray-900">Recibirás en tu cuenta:</span>
+                <span className="font-bold text-blue-600 text-lg">{formatCurrency(numericAmount)}</span>
+              </div>
+              <div className="flex items-start gap-2 bg-blue-50 rounded-lg p-3">
+                <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 leading-relaxed">Los retiros se procesan en días hábiles de 9:00 AM a 5:00 PM.</p>
+              </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Important Information */}
+        {/* Info */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-4">
               <Info className="h-5 w-5 text-blue-600" />
-              Información importante
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-gray-600">
-            <div className="flex gap-3">
-              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-              <p>Los retiros se procesan únicamente en días hábiles (lunes a viernes)</p>
+              <p className="font-bold text-gray-900">Información importante</p>
             </div>
-            <div className="flex gap-3">
-              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-              <p>El horario de procesamiento es de 9:00 AM a 5:00 PM</p>
-            </div>
-            <div className="flex gap-3">
-              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-              <p>Recibirás una notificación cuando el dinero esté disponible en tu cuenta</p>
-            </div>
-            <div className="flex gap-3">
-              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-              <p>Las comisiones varían según el banco destino</p>
-            </div>
+            <ul className="space-y-2.5">
+              {[
+                "Los retiros se procesan únicamente en días hábiles (lunes a viernes)",
+                "El horario de procesamiento es de 9:00 AM a 5:00 PM",
+                "El monto aparecerá en tu cuenta bancaria en los próximos 2 días hábiles",
+              ].map((text) => (
+                <li key={text} className="flex items-start gap-2.5 text-sm text-gray-600">
+                  <span className="h-2 w-2 rounded-full bg-blue-600 mt-1.5 shrink-0" />
+                  {text}
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
 
-        {/* Action Button */}
-        <div className="pb-6">
-          <Button
-            onClick={handleWithdraw}
-            disabled={!amount || !isValidAmount || isProcessing}
-            className="w-full h-12 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300"
-          >
-            {isProcessing ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Procesando...
-              </div>
-            ) : (
-              `Retirar ${amount ? formatCurrency(numericAmount) : "Dinero"}`
-            )}
-          </Button>
-        </div>
+        <Button
+          onClick={handleWithdraw}
+          disabled={!amount || !isValidAmount || isProcessing}
+          className="w-full bg-blue-600 hover:bg-blue-700 py-6"
+        >
+          {isProcessing ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Procesando...
+            </span>
+          ) : (
+            `Retirar ${amount ? formatCurrency(numericAmount) : "Dinero"}`
+          )}
+        </Button>
       </div>
     </div>
   )

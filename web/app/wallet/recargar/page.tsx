@@ -1,144 +1,112 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, CreditCard, Smartphone, Building2, Shield, Clock, CheckCircle } from "lucide-react"
+import { ArrowLeft, ShieldCheck, Loader2, CheckCircle2, Building2, Banknote, Smartphone, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Card, CardContent } from "@/components/ui/card"
+import { RequireAuth } from "@/components/require-auth"
+import { useAuth } from "@/contexts/AuthContext"
+import { getPaymentMethods, getPaymentMethodDisplayName, type PaymentMethod } from "@/lib/services/paymentService"
 
-// Mock payment methods
-const paymentMethods = [
-  {
-    id: 1,
-    type: "card",
-    name: "Visa terminada en 4532",
-    icon: CreditCard,
-    isDefault: true,
-    processingTime: "Inmediato",
-    fee: 0,
-    maxAmount: 50000,
-  },
-  {
-    id: 2,
-    type: "card",
-    name: "Mastercard terminada en 8901",
-    icon: CreditCard,
-    isDefault: false,
-    processingTime: "Inmediato",
-    fee: 0,
-    maxAmount: 50000,
-  },
-  {
-    id: 3,
-    type: "bank",
-    name: "Banco Popular Dominicano",
-    icon: Building2,
-    isDefault: false,
-    processingTime: "1-2 días hábiles",
-    fee: 25,
-    maxAmount: 100000,
-  },
-  {
-    id: 4,
-    type: "mobile",
-    name: "Tigo Money",
-    icon: Smartphone,
-    isDefault: false,
-    processingTime: "Inmediato",
-    fee: 15,
-    maxAmount: 25000,
-  },
-]
-
-// Quick amount options
 const quickAmounts = [500, 1000, 2000, 5000, 10000, 15000]
 
-export default function RechargeWalletPage() {
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP", minimumFractionDigits: 0 }).format(amount)
+}
+
+// Mapeo de los nombres de ícono Ionicons de paymentService.getPaymentMethodIcon() a lucide.
+function PaymentMethodIcon({ type }: { type: PaymentMethod["type"] }) {
+  switch (type) {
+    case "bank_transfer":
+      return <Building2 className="h-5 w-5 text-gray-500" />
+    case "cash":
+      return <Banknote className="h-5 w-5 text-gray-500" />
+    case "mobile_payment":
+      return <Smartphone className="h-5 w-5 text-gray-500" />
+    default:
+      return <CreditCard className="h-5 w-5 text-gray-500" />
+  }
+}
+
+export default function RecargarPageGate() {
+  return (
+    <RequireAuth>
+      <RecargarPage />
+    </RequireAuth>
+  )
+}
+
+function RecargarPage() {
+  const { user } = useAuth()
   const [amount, setAmount] = useState("")
-  const [selectedMethod, setSelectedMethod] = useState(1)
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [loadingMethods, setLoadingMethods] = useState(true)
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
 
-  const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedMethod)
+  useEffect(() => {
+    if (!user?.id) {
+      setLoadingMethods(false)
+      return
+    }
+    setLoadingMethods(true)
+    getPaymentMethods(user.id).then((methods) => {
+      setPaymentMethods(methods)
+      setSelectedMethod((current) => {
+        if (current && methods.some((m) => m.id === current)) return current
+        return methods.find((m) => m.isDefault)?.id ?? methods[0]?.id ?? null
+      })
+      setLoadingMethods(false)
+    })
+  }, [user?.id])
+
+  const selectedPaymentMethod = paymentMethods.find((m) => m.id === selectedMethod)
   const numericAmount = Number.parseFloat(amount) || 0
-  const fee = selectedPaymentMethod ? selectedPaymentMethod.fee : 0
-  const totalAmount = numericAmount + fee
+  const isValidAmount = numericAmount >= 100 && numericAmount <= 50000
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-DO", {
-      style: "currency",
-      currency: "DOP",
-      minimumFractionDigits: 0,
-    }).format(amount)
-  }
-
-  const handleQuickAmount = (quickAmount: number) => {
-    setAmount(quickAmount.toString())
-  }
-
-  const handleRecharge = async () => {
+  // NOTA: igual que en mobile-app (RechargeWalletScreen.tsx), esto es una simulación —
+  // no hay integración de pago real todavía, así que no se escribe nada en Firestore
+  // (ni addTransaction ni updateWalletBalance). El saldo del wallet no cambia de verdad.
+  // Cuando exista una pasarela real (p.ej. reutilizando el stub de Pago Azul del checkout),
+  // esta función debe reemplazarse por una escritura real.
+  const handleRecharge = () => {
     if (!amount || numericAmount < 100) return
-
     setIsProcessing(true)
-
-    // Simulate processing
     setTimeout(() => {
       setIsProcessing(false)
       setShowConfirmation(true)
     }, 2000)
   }
 
-  const isValidAmount = numericAmount >= 100 && numericAmount <= (selectedPaymentMethod?.maxAmount || 50000)
-
   if (showConfirmation) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <header className="bg-white shadow-sm sticky top-0 z-40">
-          <div className="px-4 py-3 flex items-center gap-3">
-            <Link href="/wallet">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="font-semibold text-gray-900">Recarga Exitosa</h1>
-          </div>
-        </header>
-
-        <div className="p-4">
-          <Card className="max-w-md mx-auto">
-            <CardContent className="p-8 text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="h-8 w-8 text-green-600" />
+        <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+          <Link href="/wallet">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <h1 className="font-semibold text-gray-900">Recarga Exitosa</h1>
+        </div>
+        <div className="p-4 max-w-md mx-auto">
+          <Card className="mt-6">
+            <CardContent className="p-8 flex flex-col items-center text-center">
+              <div className="h-16 w-16 rounded-full bg-brand-light flex items-center justify-center mb-4">
+                <CheckCircle2 className="h-8 w-8 text-brand-ui" />
               </div>
-
               <h2 className="text-xl font-bold text-gray-900 mb-2">¡Recarga Exitosa!</h2>
-              <p className="text-gray-600 mb-6">Tu wallet ha sido recargado con {formatCurrency(numericAmount)}</p>
-
-              <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Monto recargado:</span>
-                  <span className="font-medium">{formatCurrency(numericAmount)}</span>
-                </div>
-                {fee > 0 && (
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-gray-600">Comisión:</span>
-                    <span className="font-medium">{formatCurrency(fee)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center pt-2 border-t">
-                  <span className="text-sm font-medium">Total pagado:</span>
-                  <span className="font-bold text-emerald-600">{formatCurrency(totalAmount)}</span>
-                </div>
+              <p className="text-sm text-gray-500 mb-6">Tu wallet ha sido recargado con {formatCurrency(numericAmount)}</p>
+              <div className="w-full bg-gray-50 rounded-lg p-4 flex justify-between mb-6">
+                <span className="font-medium text-gray-900">Total pagado:</span>
+                <span className="font-bold text-brand-ui">{formatCurrency(numericAmount)}</span>
               </div>
-
-              <div className="space-y-3">
+              <div className="w-full space-y-3">
                 <Link href="/wallet">
-                  <Button className="w-full bg-emerald-500 hover:bg-emerald-600">Ver mi Wallet</Button>
+                  <Button className="w-full bg-brand-ui hover:bg-brand-dark">Ver mi Wallet</Button>
                 </Link>
                 <Link href="/">
                   <Button variant="outline" className="w-full bg-transparent">
@@ -154,183 +122,132 @@ export default function RechargeWalletPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="px-4 py-3 flex items-center gap-3">
-          <Link href="/wallet">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="font-semibold text-gray-900">Recargar Wallet</h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 pb-8">
+      <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+        <Link href="/wallet">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <h1 className="font-semibold text-gray-900">Recargar Wallet</h1>
+      </div>
 
-      <div className="p-4 space-y-6">
-        {/* Amount Input */}
+      <div className="p-4 max-w-md mx-auto space-y-4">
+        {/* Amount */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">¿Cuánto quieres recargar?</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="amount">Monto a recargar</Label>
-              <div className="relative mt-1">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">RD$</span>
-                <Input
-                  id="amount"
-                  type="number"
-                  placeholder="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="pl-12 text-lg font-medium"
-                  min="100"
-                  max="50000"
-                />
-              </div>
-              {amount && !isValidAmount && (
-                <p className="text-sm text-red-600 mt-1">
-                  El monto debe estar entre RD$100 y {formatCurrency(selectedPaymentMethod?.maxAmount || 50000)}
-                </p>
-              )}
+          <CardContent className="p-5">
+            <p className="font-bold text-gray-900 mb-4">¿Cuánto quieres recargar?</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">Monto a recargar</p>
+            <div className="relative mb-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">RD$</span>
+              <Input
+                placeholder="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                inputMode="numeric"
+                className="pl-11 text-lg font-medium"
+              />
             </div>
+            {amount && !isValidAmount && (
+              <p className="text-xs text-red-600 mb-3">El monto debe estar entre RD$100 y {formatCurrency(50000)}</p>
+            )}
 
-            {/* Quick Amount Buttons */}
-            <div>
-              <Label className="text-sm text-gray-600">Montos rápidos</Label>
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {quickAmounts.map((quickAmount) => (
-                  <Button
-                    key={quickAmount}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleQuickAmount(quickAmount)}
-                    className="bg-transparent"
-                  >
-                    {formatCurrency(quickAmount)}
-                  </Button>
-                ))}
-              </div>
+            <p className="text-xs text-gray-500 mt-4 mb-2">Montos rápidos</p>
+            <div className="grid grid-cols-3 gap-2">
+              {quickAmounts.map((qa) => (
+                <button
+                  key={qa}
+                  onClick={() => setAmount(String(qa))}
+                  className="py-2 border border-gray-300 rounded-md text-xs font-medium text-gray-700"
+                >
+                  {formatCurrency(qa)}
+                </button>
+              ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* Payment Methods */}
+        {/* Payment methods */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Método de pago</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {paymentMethods.map((method) => {
-              const Icon = method.icon
-              return (
-                <div
-                  key={method.id}
-                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                    selectedMethod === method.id
-                      ? "border-emerald-500 bg-emerald-50"
-                      : "border-gray-200 hover:bg-gray-50"
-                  }`}
-                  onClick={() => setSelectedMethod(method.id)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                      <Icon className="h-5 w-5 text-gray-600" />
+          <CardContent className="p-5">
+            <p className="font-bold text-gray-900 mb-4">Método de pago</p>
+            {loadingMethods ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-brand-ui" />
+              </div>
+            ) : paymentMethods.length === 0 ? (
+              <div className="flex flex-col items-center py-6 text-center gap-1">
+                <CreditCard className="h-10 w-10 text-gray-300 mb-1" />
+                <p className="text-gray-600 font-medium text-sm">Aún no tienes métodos de pago</p>
+                <p className="text-xs text-gray-400">Agrega una tarjeta, cuenta bancaria o pago móvil para recargar tu wallet</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {paymentMethods.map((method) => (
+                  <button
+                    key={method.id}
+                    onClick={() => setSelectedMethod(method.id)}
+                    className={`w-full flex items-center gap-3 p-4 border rounded-xl text-left ${
+                      selectedMethod === method.id ? "border-brand-ui bg-brand-extraLight" : "border-gray-200 bg-white"
+                    }`}
+                  >
+                    <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                      <PaymentMethodIcon type={method.type} />
                     </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm">{method.name}</p>
-                        {method.isDefault && (
-                          <Badge className="bg-emerald-100 text-emerald-700 text-xs">Predeterminado</Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 mt-1">
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3 text-gray-400" />
-                          <span className="text-xs text-gray-600">{method.processingTime}</span>
-                        </div>
-                        {method.fee > 0 && (
-                          <span className="text-xs text-gray-600">Comisión: {formatCurrency(method.fee)}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div
-                      className={`w-4 h-4 rounded-full border-2 ${
-                        selectedMethod === method.id ? "border-emerald-500 bg-emerald-500" : "border-gray-300"
-                      }`}
-                    >
-                      {selectedMethod === method.id && (
-                        <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 truncate">{getPaymentMethodDisplayName(method)}</span>
+                      {method.isDefault && (
+                        <span className="text-[10px] bg-brand-light text-brand-dark px-1.5 py-0.5 rounded shrink-0">Predeterminado</span>
                       )}
                     </div>
-                  </div>
-                </div>
-              )
-            })}
-
+                    <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${selectedMethod === method.id ? "border-brand-ui bg-brand-ui" : "border-gray-300"}`} />
+                  </button>
+                ))}
+              </div>
+            )}
             <Link href="/configuracion/pagos/agregar">
-              <Button variant="outline" className="w-full mt-3 bg-transparent">
-                + Agregar nuevo método de pago
-              </Button>
+              <button className="w-full mt-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-600">+ Agregar nuevo método de pago</button>
             </Link>
           </CardContent>
         </Card>
 
-        {/* Transaction Summary */}
+        {/* Summary */}
         {amount && isValidAmount && (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Resumen de la transacción</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Monto a recargar:</span>
-                  <span className="font-medium">{formatCurrency(numericAmount)}</span>
-                </div>
-                {fee > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Comisión:</span>
-                    <span className="font-medium">{formatCurrency(fee)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between pt-3 border-t">
-                  <span className="font-medium">Total a pagar:</span>
-                  <span className="font-bold text-emerald-600 text-lg">{formatCurrency(totalAmount)}</span>
-                </div>
+            <CardContent className="p-5">
+              <p className="font-bold text-gray-900 mb-4">Resumen de la transacción</p>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-500">Monto a recargar:</span>
+                <span className="font-medium text-gray-900">{formatCurrency(numericAmount)}</span>
               </div>
-
-              <Alert className="mt-4">
-                <Shield className="h-4 w-4" />
-                <AlertDescription>
-                  Tu información está protegida con encriptación SSL de 256 bits. El dinero estará disponible en tu
-                  wallet {selectedPaymentMethod?.processingTime.toLowerCase()}.
-                </AlertDescription>
-              </Alert>
+              <div className="flex justify-between border-t border-gray-200 pt-3 mb-4">
+                <span className="font-medium text-gray-900">Total a pagar:</span>
+                <span className="font-bold text-brand-ui text-lg">{formatCurrency(numericAmount)}</span>
+              </div>
+              <div className="flex items-start gap-2 bg-brand-extraLight border border-brand-light rounded-lg p-3">
+                <ShieldCheck className="h-4 w-4 text-brand-ui shrink-0 mt-0.5" />
+                <p className="text-xs text-brand-dark leading-relaxed">
+                  Tu información está protegida con encriptación SSL de 256 bits. El dinero estará disponible en tu wallet
+                  usando {selectedPaymentMethod ? getPaymentMethodDisplayName(selectedPaymentMethod) : "tu método de pago"}.
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Action Button */}
-        <div className="pb-6">
-          <Button
-            onClick={handleRecharge}
-            disabled={!amount || !isValidAmount || isProcessing}
-            className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300"
-          >
-            {isProcessing ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Procesando...
-              </div>
-            ) : (
-              `Recargar ${amount ? formatCurrency(numericAmount) : "Wallet"}`
-            )}
-          </Button>
-        </div>
+        <Button
+          onClick={handleRecharge}
+          disabled={!amount || !isValidAmount || !selectedMethod || isProcessing}
+          className="w-full bg-brand-ui hover:bg-brand-dark py-6"
+        >
+          {isProcessing ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Procesando...
+            </span>
+          ) : (
+            `Recargar ${amount ? formatCurrency(numericAmount) : "Wallet"}`
+          )}
+        </Button>
       </div>
     </div>
   )
