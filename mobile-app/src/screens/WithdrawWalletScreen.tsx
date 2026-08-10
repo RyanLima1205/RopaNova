@@ -15,7 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { auth } from '../firebaseConfig';
-import { getWalletData, getPaymentMethods, getPaymentMethodDisplayName, addTransaction, updateWalletBalance, PaymentMethod } from '../services/paymentService';
+import { getWalletData, getPaymentMethods, getPaymentMethodDisplayName, PaymentMethod } from '../services/paymentService';
 
 type WithdrawWalletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'WithdrawWallet'>;
 
@@ -31,8 +31,6 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [showBalance, setShowBalance] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [showConfirmation, setShowConfirmation] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
 
   useFocusEffect(
@@ -55,7 +53,6 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
     }, []),
   );
 
-  const selectedBankAccount = bankAccounts.find((account) => account.id === selectedAccount);
   const numericAmount = Number.parseFloat(amount) || 0;
   const totalDeduction = numericAmount;
   const remainingBalance = walletBalance - totalDeduction;
@@ -72,102 +69,26 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
     setAmount(Math.max(0, walletBalance).toString());
   };
 
-  const handleWithdraw = async () => {
-    if (!amount || !isValidAmount || !selectedAccount) return;
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-
-    setIsProcessing(true);
-    try {
-      const accountLabel = selectedBankAccount
-        ? getPaymentMethodDisplayName(selectedBankAccount)
-        : 'cuenta bancaria';
-      await addTransaction(uid, {
-        userId: uid,
-        type: 'withdrawal',
-        description: `Retiro a ${accountLabel}`,
-        amount: -numericAmount,
-        status: 'processing',
-        paymentMethodId: selectedAccount,
-      });
-      await updateWalletBalance(uid, numericAmount, 'subtract');
-      setShowConfirmation(true);
-    } catch {
-      Alert.alert('Error', 'No se pudo procesar el retiro. Intenta de nuevo.');
-    } finally {
-      setIsProcessing(false);
-    }
+  /**
+   * Los retiros reales requieren la Cloud Function requestWithdrawal (calcula el
+   * monto retirable a partir de la retención y la comisión, ninguna de las dos
+   * decidida todavía — ver docs/briefing-integration-azul.md §7). Mientras tanto,
+   * firestore.rules bloquea toda escritura directa del cliente en wallet/transactions
+   * (ver auditoría + corrección de reglas), así que el flujo anterior (addTransaction +
+   * updateWalletBalance desde el cliente) ya no puede funcionar. Se neutraliza el botón
+   * en vez de dejarlo fallar con un error genérico de permisos.
+   */
+  const handleWithdraw = () => {
+    Alert.alert(
+      'Próximamente',
+      'Los retiros estarán disponibles al lanzamiento de la plataforma.',
+    );
   };
 
   const isValidAmount =
     numericAmount >= MIN_WITHDRAW_AMOUNT &&
     totalDeduction <= walletBalance &&
     !!selectedAccount;
-
-  if (showConfirmation) {
-    return (
-      <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#374151" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Retiro Solicitado</Text>
-        </View>
-
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.confirmationCard}>
-            <View style={styles.confirmationIcon}>
-              <Ionicons name="time" size={32} color="#2563EB" />
-            </View>
-
-            <Text style={styles.confirmationTitle}>¡Retiro Solicitado!</Text>
-            <Text style={styles.confirmationSubtitle}>
-              Tu solicitud de retiro por {formatCurrency(numericAmount)} está siendo procesada
-            </Text>
-
-            <View style={styles.transactionDetails}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Monto a retirar:</Text>
-                <Text style={styles.detailValue}>{formatCurrency(numericAmount)}</Text>
-              </View>
-              <View style={[styles.detailRow, styles.borderTop]}>
-                <Text style={styles.detailLabel}>Cuenta destino:</Text>
-                <Text style={styles.detailValue}>
-                  {selectedBankAccount ? getPaymentMethodDisplayName(selectedBankAccount) : ''}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.infoAlert}>
-              <Ionicons name="information-circle" size={20} color="#2563EB" />
-              <Text style={styles.infoText}>
-                El monto aparecerá en tu cuenta bancaria en los próximos 2 días hábiles (lunes a viernes, de 9:00 AM a 5:00 PM).
-              </Text>
-            </View>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={() => navigation.navigate('Wallet')}
-              >
-                <Text style={styles.primaryButtonText}>Ver mi Wallet</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => navigation.navigate('MainTabs')}
-              >
-                <Text style={styles.secondaryButtonText}>Ir al Inicio</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -356,26 +277,16 @@ export const WithdrawWalletScreen: React.FC<WithdrawWalletScreenProps> = ({ navi
           </View>
         </View>
 
-        {/* Action Button */}
+        {/* Action Button — retiros deshabilitados hasta que exista requestWithdrawal (Cloud Function) */}
         <View style={styles.bottomSpacing}>
           <TouchableOpacity
-            style={[
-              styles.withdrawButton,
-              (!amount || !isValidAmount || isProcessing) && styles.withdrawButtonDisabled,
-            ]}
+            style={[styles.withdrawButton, styles.withdrawButtonDisabled]}
             onPress={handleWithdraw}
-            disabled={!amount || !isValidAmount || isProcessing}
+            disabled
           >
-            {isProcessing ? (
-              <View style={styles.loadingContainer}>
-                <View style={styles.spinner} />
-                <Text style={styles.withdrawButtonText}>Procesando...</Text>
-              </View>
-            ) : (
-              <Text style={styles.withdrawButtonText}>
-                Retirar {amount ? formatCurrency(numericAmount) : "Dinero"}
-              </Text>
-            )}
+            <Text style={styles.withdrawButtonText}>
+              Los retiros estarán disponibles al lanzamiento de la plataforma
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

@@ -87,19 +87,29 @@ service cloud.firestore {
       // ==========================================
       match /wallet/{walletDoc} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId);
-        allow update: if isOwner(userId);
-        allow delete: if false;
+        // Solo el bootstrap de saldo cero (getWalletData crea el doc la primera vez
+        // que se consulta). El balance real nunca lo escribe el cliente — retiros,
+        // ventas, recargas: todo eso pasa por Cloud Functions con Admin SDK, que
+        // ignora estas reglas. Ver docs/briefing-integration-azul.md §3.4 y el
+        // audit de wallet/transactions previo a este cambio (0 saldos distintos de
+        // cero, 0 documentos transactions en toda la base).
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['userId', 'balance', 'pendingEarnings', 'totalEarnings', 'currency', 'lastUpdated'])
+          && request.resource.data.balance == 0
+          && request.resource.data.pendingEarnings == 0
+          && request.resource.data.totalEarnings == 0;
+        allow update, delete: if false;
       }
-      
+
       // ==========================================
       // SOUS-COLLECTION: TRANSACTIONS
       // ==========================================
       match /transactions/{transactionId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId);
-        allow update: if isOwner(userId);
-        allow delete: if false;
+        // Igual que wallet: crear una transacción (retiro, venta, recarga) sin
+        // pasar por una Cloud Function permitiría fabricar movimientos de dinero
+        // ficticios. Únicamente Admin SDK escribe aquí.
+        allow create, update, delete: if false;
       }
       
       // ==========================================
