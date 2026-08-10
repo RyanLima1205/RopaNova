@@ -229,16 +229,54 @@ service cloud.firestore {
     // COLLECTION: ORDERS
     // ==========================================
     match /orders/{orderId} {
-      allow read: if isAuthenticated() 
-        && (resource.data.buyerId == request.auth.uid 
+      allow read: if isAuthenticated()
+        && (resource.data.buyerId == request.auth.uid
             || resource.data.sellerId == request.auth.uid);
-      allow create: if isAuthenticated() 
+
+      // NOTA: amount sigue siendo escrito por el cliente en la creación — cuando llegue
+      // AZUL, este campo debe pasar a ser exclusivo de Cloud Function (briefing §3.4).
+      // includeInsurance: opción pagada abandonada, no aparece en ninguna política
+      // publicada — a retirar o clarificar antes del lanzamiento (no tocado aquí).
+      allow create: if isAuthenticated()
         && request.resource.data.buyerId == request.auth.uid
-        && request.resource.data.keys().hasAll(['buyerId', 'sellerId', 'productId', 'amount', 'status', 'createdAt']);
-      allow update: if isAuthenticated() 
-        && (resource.data.buyerId == request.auth.uid 
-            || resource.data.sellerId == request.auth.uid);
-      allow delete: if isAuthenticated() && resource.data.buyerId == request.auth.uid;
+        && request.resource.data.buyerId != request.resource.data.sellerId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasAll(['buyerId', 'sellerId', 'productId', 'amount', 'status', 'createdAt'])
+        && request.resource.data.keys().hasOnly([
+             'buyerId', 'sellerId', 'productId', 'amount', 'status', 'createdAt', 'orderCode',
+             'productTitle', 'lineSummary', 'unitCount', 'productImage', 'sellerName', 'sellerAvatar',
+             'shippingLabel', 'shippingMethodId', 'deliveryCity', 'deliveryAddressId',
+             'deliveryAddressSummary', 'includeInsurance', 'sizeQuantities'
+           ]);
+
+      // Cancelación por el comprador — mismo criterio que cancelOrderAsBuyer() en código,
+      // ahora también en las reglas (antes nada lo impedía llamando al SDK directamente).
+      allow update: if isAuthenticated() && resource.data.buyerId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt'])
+        && request.resource.data.status == 'cancelled';
+
+      // El comprador enlaza su reseña — solo si entregada y sin reseña previa.
+      allow update: if isAuthenticated() && resource.data.buyerId == request.auth.uid
+        && resource.data.status == 'delivered'
+        && !resource.data.get('hasReview', false)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reviewId', 'hasReview'])
+        && request.resource.data.hasReview == true;
+
+      // Progreso de estado por el vendedor — transiciones explícitas hacia adelante, más
+      // cancelación desde cualquier estado previo a 'delivered'. Más estricto que el código
+      // actual (updateOrderStatus no valida la transición) — cierra el hueco de saltar
+      // directo a 'delivered' o reabrir un pedido cancelado.
+      allow update: if isAuthenticated() && resource.data.sellerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'trackingNumber', 'estimatedDelivery'])
+        && (
+          (resource.data.status == 'pending' && request.resource.data.status == 'confirmed') ||
+          (resource.data.status == 'confirmed' && request.resource.data.status == 'shipped') ||
+          (resource.data.status == 'shipped' && request.resource.data.status == 'delivered') ||
+          (resource.data.status in ['pending', 'confirmed', 'shipped'] && request.resource.data.status == 'cancelled')
+        );
+
+      allow delete: if false; // sin caller legítimo encontrado en todo el código
     }
     
     // ==========================================
