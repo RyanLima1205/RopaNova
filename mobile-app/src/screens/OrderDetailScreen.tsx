@@ -36,7 +36,8 @@ import {
 type Nav = StackNavigationProp<RootStackParamList, 'OrderDetail'>;
 type Route = RouteProp<RootStackParamList, 'OrderDetail'>;
 
-const canCancelPending = (s: OrderStatus) => s === 'pending';
+/** Cancelable mientras no haya sido despachado (ropanova.com/devoluciones §7). */
+const canCancelPending = (s: OrderStatus) => s === 'pending' || s === 'confirmed';
 
 function TimelineDot({ state }: { state: TimelineStepState }) {
   if (state === 'done') {

@@ -80,8 +80,8 @@ export const OrdersScreen: React.FC = () => {
 
   const filteredOrders = filterList(orders);
 
-  /** Solo cancelar en pendiente; para cambios hay que anular y volver a comprar (v2: edición). */
-  const canCancelPending = (s: OrderStatus) => s === 'pending';
+  /** Cancelable mientras no haya sido despachado (ropanova.com/devoluciones §7); para cambios hay que anular y volver a comprar (v2: edición). */
+  const canCancelPending = (s: OrderStatus) => s === 'pending' || s === 'confirmed';
 
   const OrderCard = ({ order }: { order: BuyerOrder }) => {
     const statusInfo = getStatusInfo(order.status);

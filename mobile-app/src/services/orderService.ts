@@ -250,7 +250,9 @@ export async function cancelOrderAsBuyer(orderId: string, buyerId: string): Prom
   const data = snap.data();
   if (data.buyerId !== buyerId) throw new Error('FORBIDDEN');
   const st = data.status as OrderStatus;
-  if (st !== 'pending') throw new Error('NOT_CANCELLABLE');
+  // Alineado con la política pública (ropanova.com/devoluciones §7): cancelable
+  // mientras no haya sido despachado, es decir 'pending' o 'confirmed'.
+  if (st !== 'pending' && st !== 'confirmed') throw new Error('NOT_CANCELLABLE');
   await updateDoc(ref, {
     status: 'cancelled',
     cancelledAt: serverTimestamp(),

@@ -249,10 +249,11 @@ service cloud.firestore {
              'deliveryAddressSummary', 'includeInsurance', 'sizeQuantities'
            ]);
 
-      // Cancelación por el comprador — mismo criterio que cancelOrderAsBuyer() en código,
-      // ahora también en las reglas (antes nada lo impedía llamando al SDK directamente).
+      // Cancelación por el comprador — alineado con la política pública
+      // (ropanova.com/devoluciones §7: "mientras el pedido no haya sido despachado"),
+      // mismo criterio que cancelOrderAsBuyer() en código.
       allow update: if isAuthenticated() && resource.data.buyerId == request.auth.uid
-        && resource.data.status == 'pending'
+        && resource.data.status in ['pending', 'confirmed']
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt'])
         && request.resource.data.status == 'cancelled';
 
