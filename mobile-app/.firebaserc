@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "ropanova"
-  }
+  },
+  "targets": {
+    "ropanova": {
+      "hosting": {
+        "pay": [
+          "ropanova-pay"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

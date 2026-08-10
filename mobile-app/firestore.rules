@@ -257,6 +257,36 @@ service cloud.firestore {
     }
 
     // ==========================================
+    // COLLECTION: AZUL TRANSACTIONS (fase de prueba técnica — separada
+    // de /orders a propósito; ver docs/briefing-integration-azul.md §3.4)
+    // ==========================================
+    match /azulTransactions/{transactionId} {
+      // El cliente solo puede crear el registro inicial de intento de pago, con
+      // exactamente estos campos. El monto (amountCents/itbisCents), el estado y
+      // todos los campos de respuesta de Azul (authorizationCode, rrn, azulOrderId,
+      // isoCode, responseMessage, errorDescription, verifiedAt) los escribe
+      // EXCLUSIVAMENTE una Cloud Function vía Admin SDK — nunca el cliente.
+      // NOTA — límite conocido de esta regla: solo valida que buyerId sea quien llama,
+      // NO que merchantOrderRef pertenezca realmente a ese buyerId (las reglas no tienen
+      // de dónde leer esa relación todavía — el modelo de "solicitud de pedido" no está
+      // definido). La función que construya el pago con Azul (aún no implementada) DEBE
+      // verificar la pertenencia de merchantOrderRef al buyerId autenticado antes de
+      // generar el AuthHash; no confiar en esta regla para eso.
+      allow create: if isAuthenticated()
+        && request.resource.data.buyerId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['orderNumber', 'merchantOrderRef', 'buyerId', 'createdAt'])
+        && request.resource.data.orderNumber is string
+        && request.resource.data.orderNumber.size() > 0
+        && request.resource.data.merchantOrderRef is string
+        && request.resource.data.merchantOrderRef.size() > 0;
+      // El comprador puede consultar el estado de su propia transacción (polling).
+      allow read: if isAuthenticated() && resource.data.buyerId == request.auth.uid;
+      // Toda actualización (monto, estado, campos de respuesta Azul) pasa por
+      // Cloud Functions con Admin SDK, que ignora estas reglas.
+      allow update, delete: if false;
+    }
+
+    // ==========================================
     // BLOQUER TOUTE AUTRE COLLECTION
     // ==========================================
     match /{document=**} {
