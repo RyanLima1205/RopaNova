@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto'
-import { defineSecret } from 'firebase-functions/params'
+import { defineSecret, defineString } from 'firebase-functions/params'
 
 /**
  * Secret Manager — nunca hardcodear, nunca en Firestore. Los valores reales se
@@ -10,6 +10,19 @@ import { defineSecret } from 'firebase-functions/params'
  */
 export const azulMerchantId = defineSecret('AZUL_MERCHANT_ID')
 export const azulAuthKey = defineSecret('AZUL_AUTH_KEY')
+
+/**
+ * NO es secreto — variable de entorno normal (defineString, respaldada por
+ * functions/.env*), no Secret Manager. Azul la entrega junto con los accesos
+ * de cada entorno; cada MerchantId transige en una sola divisa.
+ *
+ * PENDIENTE DE CONFIRMACIÓN POR AZUL (Luis) — "$" es el valor esperado pero no
+ * confirmado todavía. Mientras no llegue esa confirmación, un fallo de AuthHash
+ * en pruebas de sandbox NO debe tratarse como bug de computeAuthHash — puede
+ * ser simplemente que este valor esté mal. computeAuthHash en sí ya fue
+ * verificada correcta contra la documentación oficial de Azul.
+ */
+export const azulCurrencyCode = defineString('AZUL_CURRENCY_CODE', { default: '$' })
 
 export interface AzulRequestHashFields {
   MerchantId: string
