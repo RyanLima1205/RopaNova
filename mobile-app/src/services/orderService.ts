@@ -65,7 +65,6 @@ export interface CreateOrderInput {
   deliveryCity: string;
   deliveryAddressId?: string;
   deliveryAddressSummary?: string;
-  includeInsurance: boolean;
   sizeQuantities: Record<string, number>;
   status?: OrderStatus;
 }
@@ -159,7 +158,6 @@ export async function createOrder(input: CreateOrderInput): Promise<{ id: string
     deliveryCity: input.deliveryCity,
     ...(input.deliveryAddressId ? { deliveryAddressId: input.deliveryAddressId } : {}),
     ...(input.deliveryAddressSummary ? { deliveryAddressSummary: input.deliveryAddressSummary } : {}),
-    includeInsurance: input.includeInsurance,
     sizeQuantities: input.sizeQuantities,
   });
   return { id: ref.id, orderCode };

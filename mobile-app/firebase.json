@@ -9,7 +9,37 @@
     {
       "target": "pay",
       "public": "public-pay",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [
+        {
+          "source": "/pay-test",
+          "function": {
+            "functionId": "payTest",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/aprobada",
+          "function": {
+            "functionId": "azulApproved",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/declinada",
+          "function": {
+            "functionId": "azulDeclined",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/cancelada",
+          "function": {
+            "functionId": "azulCancelled",
+            "region": "us-central1"
+          }
+        }
+      ]
     }
   ],
   "functions": [

@@ -102,7 +102,6 @@ export function computeCheckoutTotals(
   selectedShipping: string,
   selectedDeliveryCity: string,
   shippingOptions: ShippingOption[],
-  includeInsurance: boolean,
 ) {
   const selectedShippingOption = shippingOptions.find((o) => o.id === selectedShipping);
   const unitCount = totalUnitsFromQuantities(sizeQuantities);
@@ -116,16 +115,15 @@ export function computeCheckoutTotals(
   })();
 
   const subtotal = product.price * unitCount;
-  const serviceFee = Math.round(subtotal * 0.05);
-  const insuranceFee = includeInsurance ? Math.round(subtotal * 0.05) : 0;
-  const total = subtotal + shippingCost + serviceFee + insuranceFee;
+  // 2.5% del buyer service fee, floor (no round) para ser consistente con la política de precios TTC.
+  const serviceFee = Math.floor((subtotal * 25) / 1000);
+  const total = subtotal + shippingCost + serviceFee;
 
   return {
     unitCount,
     subtotal,
     shippingCost,
     serviceFee,
-    insuranceFee,
     total,
     selectedShippingOption,
   };

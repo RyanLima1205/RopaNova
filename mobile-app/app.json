@@ -2,6 +2,7 @@
   "expo": {
     "name": "RopaNova Mobile",
     "slug": "ropanova-mobile",
+    "scheme": "ropanova",
     "version": "1.0.0",
     "runtimeVersion": {
       "policy": "appVersion"

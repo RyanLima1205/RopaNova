@@ -235,8 +235,8 @@ service cloud.firestore {
 
       // NOTA: amount sigue siendo escrito por el cliente en la creación — cuando llegue
       // AZUL, este campo debe pasar a ser exclusivo de Cloud Function (briefing §3.4).
-      // includeInsurance: opción pagada abandonada, no aparece en ninguna política
-      // publicada — a retirar o clarificar antes del lanzamiento (no tocado aquí).
+      // includeInsurance retirado (opción pagada abandonada, nunca publicada en ninguna
+      // política) — ver orderCheckout.ts / BuyScreen.tsx / orderService.ts.
       allow create: if isAuthenticated()
         && request.resource.data.buyerId == request.auth.uid
         && request.resource.data.buyerId != request.resource.data.sellerId
@@ -246,7 +246,7 @@ service cloud.firestore {
              'buyerId', 'sellerId', 'productId', 'amount', 'status', 'createdAt', 'orderCode',
              'productTitle', 'lineSummary', 'unitCount', 'productImage', 'sellerName', 'sellerAvatar',
              'shippingLabel', 'shippingMethodId', 'deliveryCity', 'deliveryAddressId',
-             'deliveryAddressSummary', 'includeInsurance', 'sizeQuantities'
+             'deliveryAddressSummary', 'sizeQuantities'
            ]);
 
       // Cancelación por el comprador — alineado con la política pública

@@ -2,6 +2,8 @@ import { setGlobalOptions } from 'firebase-functions'
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore'
 import * as admin from 'firebase-admin'
 
+export { payTest, azulApproved, azulDeclined, azulCancelled } from './azul'
+
 admin.initializeApp()
 setGlobalOptions({ maxInstances: 10, region: 'us-central1' })
 

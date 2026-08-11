@@ -50,7 +50,6 @@ export const BuyScreen: React.FC = () => {
   const [selectedShipping, setSelectedShipping] = useState('');
   const [selectedPayment, setSelectedPayment] = useState('wallet');
   const [buyerMessage, setBuyerMessage] = useState('');
-  const [includeInsurance, setIncludeInsurance] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmedOrderCode, setConfirmedOrderCode] = useState<string | null>(null);
@@ -85,13 +84,6 @@ export const BuyScreen: React.FC = () => {
       setSelectedPayment('wallet');
     }
   }, [selectedShipping, selectedPayment]);
-
-  // Effet pour désactiver l'assurance quand le paiement en espèces est sélectionné
-  useEffect(() => {
-    if (selectedPayment === 'cash') {
-      setIncludeInsurance(false);
-    }
-  }, [selectedPayment]);
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -257,14 +249,13 @@ export const BuyScreen: React.FC = () => {
   const paymentMethods = product ? generatePaymentMethods(product, selectedShipping) : [];
 
   const sizeSummary = formatSizeOrderSummary(sizeQuantities);
-  const { unitCount, subtotal, shippingCost, serviceFee, insuranceFee, total, selectedShippingOption } =
+  const { unitCount, subtotal, shippingCost, serviceFee, total, selectedShippingOption } =
     computeCheckoutTotals(
       product,
       sizeQuantities,
       selectedShipping,
       selectedDeliveryCity,
       shippingOptions,
-      includeInsurance,
     );
 
   const formatCurrency = (amount: number) =>
@@ -311,7 +302,6 @@ export const BuyScreen: React.FC = () => {
         selectedShipping === 'home_delivery' && selectedDeliveryAddress
           ? formatAddressShort(selectedDeliveryAddress)
           : undefined,
-      includeInsurance,
       sizeQuantities: cleanSizeQuantities(sizeQuantities),
     });
     if (selectedShipping === 'home_delivery' && selectedDeliveryAddress) {
@@ -449,7 +439,6 @@ export const BuyScreen: React.FC = () => {
                 </Text>
               </View>
             ) : null}
-            <View style={styles.rowBetween}><Text>Seguro incluido:</Text><Text style={styles.bold}>{includeInsurance ? 'Sí' : 'No'}</Text></View>
             <View style={styles.rowBetween}><Text>Total pagado:</Text><Text style={[styles.bold, { color: '#059669' }]}>{formatCurrency(total)}</Text></View>
           </View>
           <View style={styles.alertBox}>
@@ -740,73 +729,22 @@ export const BuyScreen: React.FC = () => {
               </Text>
             </View>
           </View>
-          {/* Insurance Option */}
-          <View style={styles.card}>
-            {selectedPayment === 'cash' ? (
-              // Message d'avertissement pour paiement en espèces
+          {/* Aviso de pago en efectivo — la opción de seguro pagado (paquete no publicado en ninguna política) fue retirada. */}
+          {selectedPayment === 'cash' && (
+            <View style={styles.card}>
               <View style={styles.cashWarningBox}>
                 <Ionicons name="warning" size={20} color="#d97706" style={{ marginRight: 8 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cashWarningTitle}>Pago en Efectivo - Sin Protección</Text>
                   <Text style={styles.cashWarningText}>
-                    Al pagar en efectivo, RopaNova no puede garantizar la protección de tu compra. 
-                    Te recomendamos coordinar directamente con el vendedor y verificar el producto 
+                    Al pagar en efectivo, RopaNova no puede garantizar la protección de tu compra.
+                    Te recomendamos coordinar directamente con el vendedor y verificar el producto
                     antes del pago. RopaNova no se hace responsable de transacciones en efectivo.
                   </Text>
                 </View>
               </View>
-            ) : (
-              // Option d'assurance normale pour les autres méthodes de paiement
-              <>
-                <TouchableOpacity 
-                  style={[
-                    styles.checkboxRow, 
-                    selectedPayment === 'cash' && styles.disabledRow
-                  ]} 
-                  onPress={() => setIncludeInsurance((v) => !v)}
-                  disabled={selectedPayment === 'cash'}
-                >
-                  <View style={[
-                    styles.checkbox, 
-                    includeInsurance && styles.checkboxChecked,
-                    selectedPayment === 'cash' && styles.disabledCheckbox
-                  ]}>
-                    {includeInsurance && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[
-                      styles.radioLabel,
-                      selectedPayment === 'cash' && styles.disabledText
-                    ]}>
-                      Seguro de Compra
-                    </Text>
-                    <Text style={[
-                      styles.radioDesc,
-                      selectedPayment === 'cash' && styles.disabledText
-                    ]}>
-                      Protección completa contra daños, pérdida o productos no conformes
-                    </Text>
-                  </View>
-                  <Text style={[
-                    styles.radioPrice,
-                    selectedPayment === 'cash' && styles.disabledText
-                  ]}>
-                    {formatCurrency(Math.round(subtotal * 0.05))}
-                  </Text>
-                </TouchableOpacity>
-                {includeInsurance && (
-                  <View style={styles.infoBox}>
-                    <Ionicons name="shield-checkmark" size={16} color="#059669" style={{ marginRight: 6 }} />
-                    <Text style={{ color: '#059669', fontSize: 13, flex: 1 }}>
-                   Cobertura completa: reembolso total si el producto no llega, llega dañado o no corresponde con la descripción.
-El reclamo debe realizarse dentro de las 48 horas después de la entrega.
-
-                    </Text>
-                  </View>
-                )}
-              </>
-            )}
-          </View>
+            </View>
+          )}
           {/* Message to Seller */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Mensaje al Vendedor (Opcional)</Text>
@@ -827,21 +765,9 @@ El reclamo debe realizarse dentro de las 48 horas después de la entrega.
             <View style={styles.rowBetween}><Text>Subtotal:</Text><Text>{formatCurrency(subtotal)}</Text></View>
             <View style={styles.rowBetween}><Text>Envío:</Text><Text>{shippingCost === 0 ? 'Gratis' : formatCurrency(shippingCost)}</Text></View>
             <View style={styles.rowBetween}><Text>Comisión de servicio:</Text><Text>{formatCurrency(serviceFee)}</Text></View>
-            {includeInsurance && (
-              <View style={styles.rowBetween}><Text>Seguro de compra:</Text><Text>{formatCurrency(insuranceFee)}</Text></View>
-            )}
             <View style={styles.separator} />
             <View style={[styles.rowBetween, { marginTop: 4 }]}><Text style={styles.bold}>Total:</Text><Text style={[styles.bold, { color: '#059669' }]}>{formatCurrency(total)}</Text></View>
           </View>
-          {/* Protection Notice */}
-          {includeInsurance && (
-            <View style={styles.alertBox}>
-              <Ionicons name="shield-checkmark" size={20} color="#059669" style={{ marginRight: 8 }} />
-              <Text style={{ color: '#059669', flex: 1 }}>
-                Tu pago se mantiene seguro hasta que confirmes la recepción del producto. Con el seguro adicional, tienes protección completa contra cualquier inconveniente.
-              </Text>
-            </View>
-          )}
           {/* Purchase Button */}
           <TouchableOpacity
             style={[
