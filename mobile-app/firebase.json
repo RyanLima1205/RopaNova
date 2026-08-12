@@ -12,13 +12,6 @@
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [
         {
-          "source": "/pay-test",
-          "function": {
-            "functionId": "payTest",
-            "region": "us-central1"
-          }
-        },
-        {
           "source": "/aprobada",
           "function": {
             "functionId": "azulApproved",
@@ -38,6 +31,17 @@
             "functionId": "azulCancelled",
             "region": "us-central1"
           }
+        },
+        {
+          "source": "/pay/**",
+          "function": {
+            "functionId": "payTest",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "**",
+          "destination": "/index.html"
         }
       ]
     }
