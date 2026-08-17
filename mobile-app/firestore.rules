@@ -149,7 +149,13 @@ service cloud.firestore {
     // COLLECTION: FAVORITES
     // ==========================================
     match /favorites/{favoriteId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      /**
+       * `resource == null` : un get()/delete() sur un document inexistant fait que `resource`
+       * vaut null — sans ce garde, déréférencer resource.data lève une erreur d'évaluation
+       * (remontée côté client comme "permissions insuffisantes" au lieu de "introuvable").
+       * Lire/supprimer un document qui n'existe pas est sans risque : ça ne fait rien.
+       */
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
       /**
        * Création : pas d'exigence sur createdAt (souvent FieldValue.serverTimestamp() :
        * la règle hasAll(['createdAt']) échouait → permission denied sur le batch).
@@ -162,7 +168,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll(['userId', 'productId'])
         && favoriteId == request.auth.uid + '_' + request.resource.data.productId;
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
     }
     
     // ==========================================

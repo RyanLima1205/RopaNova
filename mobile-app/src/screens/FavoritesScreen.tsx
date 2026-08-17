@@ -16,7 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
 import { ProductCard } from '../components/ProductCard';
-import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { app, auth } from '../firebaseConfig';
 import { cleanProductImages } from '../utils/imageUtils';
 
@@ -66,10 +66,37 @@ export const FavoritesScreen: React.FC = () => {
         )
       );
       const products = snapshots.flatMap(snap =>
-        snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
       );
 
-      setFavorites(products);
+      // Les documents products/{id} ne stockent qu'un userId, pas les infos vendeur
+      // (nom, boutique, avatar, vérifié) — il faut les récupérer sur users/{userId},
+      // comme le fait déjà HomeScreen.
+      const productsWithSeller = await Promise.all(
+        products.map(async (product) => {
+          if (!product.userId) return product;
+          try {
+            const userDoc = await getDoc(doc(db, 'users', product.userId));
+            if (!userDoc.exists()) return product;
+            const userData = userDoc.data();
+            return {
+              ...product,
+              seller: {
+                id: product.userId,
+                name: userData.name || 'Vendedor',
+                storeName: userData.storeName || userData.name || 'Vendedor',
+                accountType: userData.accountType || 'private',
+                avatar: userData.avatar || '',
+                verified: userData.verified || false,
+              },
+            };
+          } catch {
+            return product;
+          }
+        })
+      );
+
+      setFavorites(productsWithSeller);
     } catch (error) {
       logger.error('Erreur chargement favoris:', error);
     } finally {
@@ -101,7 +128,8 @@ export const FavoritesScreen: React.FC = () => {
         status: item.status,
         seller: item.seller || item.vendedor,
       }}
-      isFavorited
+      showRating
+      showLocation
       onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
     />
   );
@@ -128,7 +156,7 @@ export const FavoritesScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>

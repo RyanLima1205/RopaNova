@@ -27,7 +27,6 @@ import { Card } from '../components/Card'
 import { Badge as BadgePill } from '../components/Badge'
 import { EmptyState } from '../components/EmptyState'
 import { brandColors, radii, semanticColors, shadows, spacing, typography } from '../theme'
-import { useFavoriteProductIds } from '../hooks/useFavoriteProductIds'
 import { logger } from '../utils/logger'
 import { getFirestore, doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { app } from '../firebaseConfig';
@@ -143,7 +142,6 @@ function formatCreatedAt(createdAt?: any) {
 
 export const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>()
-  const { favoriteProductIds } = useFavoriteProductIds()
   const route = useRoute()
   const viewUserIdParam = (route.params as { viewUserId?: string } | undefined)?.viewUserId?.trim()
   const { user, logout } = useAuth();
@@ -1312,7 +1310,6 @@ export const ProfileScreen: React.FC = () => {
                   showRating={false}
                   showLocation={false}
                   showDate={true}
-                  isFavorited={favoriteProductIds.includes(item.id)}
                 />
               ))}
             </View>

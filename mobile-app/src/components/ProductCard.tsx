@@ -4,12 +4,15 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeImage } from './SafeImage';
 import { cleanProductImages, getUserAvatar } from '../utils/imageUtils';
 import { formatPrice } from '../utils/formatters';
-import { brandColors, radii, semanticColors, shadows, spacing, typography } from '../theme';
+import { brandColors, fontFamilies, radii, semanticColors, spacing, typography } from '../theme';
+import { auth } from '../firebaseConfig';
+import { useFavorites } from '../contexts/FavoritesContext';
 
 // Interface pour les données du produit
 interface UserListing {
@@ -44,6 +47,7 @@ interface ProductCardProps {
   /** Conservé pour compatibilité d'appel ; toutes les cartes partagent désormais la même mise en page uniforme. */
   variant?: 'standard' | 'compact' | 'detailed';
   showPrice?: boolean;
+  /** Conservé pour compatibilité de props ; la condition n'apparaît plus sur cette carte compacte (voir fiche détaillée). */
   showCondition?: boolean;
   /** Conservé pour compatibilité de props ; la marque n'apparaît plus sur cette carte compacte (voir fiche détaillée). */
   showBrand?: boolean;
@@ -51,8 +55,6 @@ interface ProductCardProps {
   showLocation?: boolean;
   /** Conservé pour compatibilité de props ; la date n'apparaît plus sur cette carte compacte (voir fiche détaillée). */
   showDate?: boolean;
-  /** Cœur rouge (rempli) si l’utilisateur connecté a ce produit en favoris */
-  isFavorited?: boolean;
 }
 
 const MAX_VISIBLE_SIZES = 4;
@@ -63,14 +65,15 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   onLongPress,
   style,
   showPrice = true,
-  showCondition = true,
   showRating = false,
   showLocation = false,
-  isFavorited = false,
 }) => {
   const sizes = product.talla && product.talla.length > 0 ? product.talla : ['Única'];
   const visibleSizes = sizes.slice(0, MAX_VISIBLE_SIZES);
   const hiddenSizesCount = sizes.length - visibleSizes.length;
+  const sizesLabel = sizes.length === 1
+    ? `Talla ${sizes[0]}`
+    : visibleSizes.join(' · ') + (hiddenSizesCount > 0 ? ` · +${hiddenSizesCount}` : '');
 
   const isSold = product.status === 'sold';
   const isInactive = product.status === 'inactive';
@@ -81,6 +84,27 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
         ? (seller.storeName || 'Tienda')
         : seller.name || 'Vendedor')
     : '';
+
+  const { isFavorited, toggleFavorite } = useFavorites();
+  const favorited = isFavorited(product.id);
+
+  const handleToggleFavorite = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('Inicio de sesión requerido', 'Inicia sesión para agregar a favoritos');
+      return;
+    }
+    try {
+      await toggleFavorite(product.id, {
+        title: product.title,
+        price: Number(product.price) || 0,
+        images: product.images,
+        brand: product.brand,
+      });
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo actualizar tus favoritos');
+    }
+  };
 
   return (
     <TouchableOpacity
@@ -97,11 +121,11 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           fallbackText="Sin Imagen"
         />
 
-        <TouchableOpacity style={styles.favoriteButton} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.favoriteButton} activeOpacity={0.7} onPress={handleToggleFavorite}>
           <Ionicons
-            name={isFavorited ? 'heart' : 'heart-outline'}
-            size={20}
-            color={isFavorited ? semanticColors.error : brandColors.textSecondary}
+            name={favorited ? 'heart' : 'heart-outline'}
+            size={16}
+            color={favorited ? semanticColors.error : brandColors.textSecondary}
           />
         </TouchableOpacity>
 
@@ -119,63 +143,43 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           {product.title || 'Sin título'}
         </Text>
 
-        {showPrice && (
-          <Text style={styles.price}>
-            {formatPrice(Number(product.price) || 0)}
-          </Text>
-        )}
+        <Text style={styles.price} numberOfLines={1}>
+          {showPrice ? formatPrice(Number(product.price) || 0) : ''}
+        </Text>
 
-        <View style={styles.metadataSection}>
-          <Text style={styles.condition} numberOfLines={1}>
-            {showCondition ? (product.condition || 'Sin condición') : ' '}
-          </Text>
-          <View style={styles.sizeBadges}>
-            {visibleSizes.map((size, index) => (
-              <View key={index} style={styles.sizeBadge}>
-                <Text style={styles.sizeText}>{size}</Text>
-              </View>
-            ))}
-            {hiddenSizesCount > 0 && (
-              <View style={styles.sizeBadge}>
-                <Text style={styles.sizeText}>+{hiddenSizesCount}</Text>
-              </View>
-            )}
-          </View>
-        </View>
+        <Text style={styles.metaLine} numberOfLines={1}>
+          {sizesLabel}
+        </Text>
 
-        <View style={styles.divider} />
-
-        <View style={styles.sellerFooter}>
-          {showRating && seller && (
-            <>
-              <SafeImage
-                uri={getUserAvatar(seller)}
-                style={styles.sellerAvatar}
-                fallbackText="U"
-              />
-              <View style={styles.sellerText}>
-                <View style={styles.sellerNameRow}>
-                  <Text style={styles.sellerName} numberOfLines={1}>
-                    {sellerName}
-                  </Text>
-                  {seller.verified && (
-                    <View style={styles.verifiedBadge}>
-                      <Ionicons name="checkmark" size={9} color={brandColors.white} />
-                    </View>
-                  )}
-                </View>
-                {showLocation && (
-                  <View style={styles.locationRow}>
-                    <Ionicons name="location-outline" size={11} color={brandColors.textSecondary} />
-                    <Text style={styles.locationText} numberOfLines={1}>
-                      Santiago, RD
-                    </Text>
+        {showRating && seller && (
+          <View style={styles.sellerFooter}>
+            <SafeImage
+              uri={getUserAvatar(seller)}
+              style={styles.sellerAvatar}
+              fallbackText="U"
+            />
+            <View style={styles.sellerText}>
+              <View style={styles.sellerNameRow}>
+                <Text style={styles.sellerName} numberOfLines={1}>
+                  {sellerName}
+                </Text>
+                {seller.verified && (
+                  <View style={styles.verifiedBadge}>
+                    <Ionicons name="checkmark" size={8} color={brandColors.white} />
                   </View>
                 )}
               </View>
-            </>
-          )}
-        </View>
+              {showLocation && (
+                <View style={styles.locationRow}>
+                  <Ionicons name="location-outline" size={11} color={brandColors.textSecondary} />
+                  <Text style={styles.locationText} numberOfLines={1}>
+                    Santiago, RD
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -185,42 +189,53 @@ ProductCard.displayName = 'ProductCard';
 
 const styles = StyleSheet.create({
   card: {
-    width: '49.5%',
+    width: '48%',
     marginBottom: spacing.sm,
     backgroundColor: brandColors.surface,
-    borderRadius: radii.large,
+    borderRadius: 14,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: brandColors.border,
-    ...shadows.card,
+    shadowColor: '#101828',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   imageSection: {
     width: '100%',
-    aspectRatio: 1,
+    aspectRatio: 0.64,
     position: 'relative',
-    backgroundColor: brandColors.surfaceSecondary,
+    backgroundColor: '#F6F7F9',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
     height: '100%',
+    backgroundColor: '#F6F7F9',
   },
   favoriteButton: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    top: 14,
+    right: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: brandColors.white,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#101828',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   statusOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(17, 24, 39, 0.42)',
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
-    padding: 10,
+    padding: 12,
   },
   statusBadge: {
     backgroundColor: 'rgba(17, 24, 39, 0.85)',
@@ -235,63 +250,46 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   contentSection: {
-    padding: spacing.md,
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 14,
   },
   title: {
     fontFamily: typography.cardTitle.fontFamily,
     color: brandColors.textPrimary,
-    fontSize: 16,
-    lineHeight: 20,
-    marginBottom: 4,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 18,
+    height: 18,
+    marginBottom: 1,
   },
   price: {
-    fontFamily: typography.cardTitle.fontFamily,
-    color: brandColors.primaryUI,
+    fontFamily: fontFamilies.montserratBold,
+    color: brandColors.textPrimary,
     fontSize: 17,
-    lineHeight: 20,
-    marginBottom: spacing.sm,
+    fontWeight: '700',
+    lineHeight: 24,
+    height: 24,
+    marginBottom: 3,
   },
-  metadataSection: {
-    minHeight: 44,
-    marginBottom: spacing.sm,
-  },
-  condition: {
-    fontFamily: typography.caption.fontFamily,
+  metaLine: {
+    fontFamily: fontFamilies.montserratMedium,
     color: brandColors.textSecondary,
     fontSize: 11,
-    lineHeight: 14,
-    marginBottom: 4,
-  },
-  sizeBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  sizeBadge: {
-    backgroundColor: brandColors.surfaceSecondary,
-    borderRadius: radii.small,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  sizeText: {
-    fontFamily: typography.bodyMedium.fontFamily,
-    color: brandColors.textSecondary,
-    fontSize: 10,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: brandColors.border,
-    marginBottom: spacing.sm,
+    lineHeight: 18,
+    height: 18,
+    marginBottom: 12,
   },
   sellerFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 32,
+    marginTop: 'auto',
   },
   sellerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     marginRight: spacing.sm,
   },
   sellerText: {
@@ -300,6 +298,7 @@ const styles = StyleSheet.create({
   sellerNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: 18,
   },
   sellerName: {
     flexShrink: 1,
@@ -309,9 +308,9 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   verifiedBadge: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: brandColors.primaryUI,
     justifyContent: 'center',
     alignItems: 'center',
@@ -319,6 +318,7 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: 16,
     marginTop: 2,
     gap: 3,
   },

@@ -59,9 +59,6 @@ const sizesByType = {
   // Vêtements enfants (par âge)
   kids: ['2T', '3T', '4T', '5T', '6', '7', '8', '10', '12', '14', '16'],
   
-  // Livres (pas de taille)
-  books: ['Único'],
-  
   // Taille unique pour accessoires
   oneSize: ['Única'],
 };
@@ -81,18 +78,6 @@ const subcategoryToSizeType: Record<string, keyof typeof sizesByType> = {
   // Vêtements enfants
   'Ropa de Niña (2-12 años)': 'kids',
   'Ropa de Niño (2-12 años)': 'kids',
-  
-  // Livres
-  'Universitarios': 'books',
-  'Novelas Románticas': 'books',
-  'Negocios': 'books',
-  'Autoayuda y Motivación': 'books',
-  'Cocina': 'books',
-  'Salud y Bienestar': 'books',
-  'Religiosos': 'books',
-  'Historia Dominicana': 'books',
-  'Idiomas': 'books',
-  'Infantiles': 'books',
   
   // Accessoires et articles à taille unique
   'Accesorios': 'oneSize',
@@ -343,9 +328,7 @@ export const AdvancedFilters: React.FC<AdvancedFiltersProps> = ({
             </View>
           )}
 
-          {/* Taille - Masqué pour les livres */}
-          {filters.mainCategory !== 'Libro' && (
-            <View style={styles.filterSection}>
+          <View style={styles.filterSection}>
               <Text style={styles.filterTitle}>Talla</Text>
               <View style={styles.chipsContainer}>
                 {getSizesForSubcategory(filters.subCategory).map((size) => {
@@ -385,12 +368,9 @@ export const AdvancedFilters: React.FC<AdvancedFiltersProps> = ({
                   );
                 })}
               </View>
-            </View>
-          )}
+          </View>
 
-          {/* Couleur - Masqué pour les livres */}
-          {filters.mainCategory !== 'Libro' && (
-            <View style={styles.filterSection}>
+          <View style={styles.filterSection}>
               <Text style={styles.filterTitle}>Color</Text>
               <View style={styles.chipsContainer}>
                 {colorOptions.map((colorOption) => (
@@ -419,12 +399,9 @@ export const AdvancedFilters: React.FC<AdvancedFiltersProps> = ({
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
-          )}
+          </View>
 
-          {/* Marque - Masqué pour les livres */}
-          {filters.mainCategory !== 'Libro' && (
-            <View style={styles.filterSection}>
+          <View style={styles.filterSection}>
               <Text style={styles.filterTitle}>Marca</Text>
               <View style={styles.dropdownContainer}>
                 <TouchableOpacity
@@ -494,9 +471,7 @@ export const AdvancedFilters: React.FC<AdvancedFiltersProps> = ({
                   </View>
                 )}
               </View>
-            </View>
-          )}
-
+          </View>
 
           {/* Condition */}
           {renderFilterSection(

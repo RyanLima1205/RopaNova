@@ -1,6 +1,6 @@
 
 import { useEffect, useRef } from 'react'
-import { View } from 'react-native'
+import { View, Image } from 'react-native'
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native'
 import type { NavigatorScreenParams } from '@react-navigation/native'
 import { createStackNavigator } from '@react-navigation/stack'
@@ -9,7 +9,6 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useFonts, Montserrat_400Regular, Montserrat_500Medium, Montserrat_600SemiBold, Montserrat_700Bold } from '@expo-google-fonts/montserrat'
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue'
-import { Logo } from './src/components/Logo'
 import { brandColors } from './src/theme'
 import { HomeScreen } from './src/screens/HomeScreen'
 import { SearchScreen } from './src/screens/SearchScreen'
@@ -17,7 +16,7 @@ import { SellScreen } from './src/screens/SellScreen'
 import { MessagesScreen } from './src/screens/MessagesScreen'
 import { ChatScreen } from './src/screens/ChatScreen'
 import { ProfileScreen } from './src/screens/ProfileScreen'
-import { ProductDetailScreen } from './src/screens/ProductDetailScreen'
+import { ProductDetailScreen } from './src/screens/ProductDetail/ProductDetailScreen'
 import { DashboardScreen } from './src/screens/DashboardScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { AccountSettingsScreen } from './src/screens/AccountSettingsScreen'
@@ -46,6 +45,7 @@ import { useAuth } from './src/contexts/AuthContext'
 import LoginScreen from './src/screens/LoginScreen'
 import RegisterScreen from './src/screens/RegisterScreen'
 import { AuthProvider } from './src/contexts/AuthContext'
+import { FavoritesProvider } from './src/contexts/FavoritesContext'
 import AccountTypeSelectionScreen from './src/screens/AccountTypeSelectionScreen'
 import { ErrorBoundary } from './src/components/ErrorBoundary'
 import { addNotificationResponseListener } from './src/services/notificationService'
@@ -120,7 +120,11 @@ function AuthNavigator() {
 function SplashScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: brandColors.white, alignItems: 'center', justifyContent: 'center' }}>
-      <Logo variant="horizontal" size="lg" tagline />
+      <Image
+        source={require('./assets/Logo-Full-RopaNova.jpeg')}
+        style={{ width: '70%', aspectRatio: 3264 / 1360 }}
+        resizeMode="contain"
+      />
     </View>
   );
 }
@@ -206,7 +210,9 @@ export default function App() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <AuthProvider>
-          <MainAppContent />
+          <FavoritesProvider>
+            <MainAppContent />
+          </FavoritesProvider>
         </AuthProvider>
       </ErrorBoundary>
     </SafeAreaProvider>

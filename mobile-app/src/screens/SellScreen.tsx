@@ -317,7 +317,6 @@ export const SellScreen: React.FC = () => {
     Mujer: ['Vestidos', 'Pantalones', 'Zapatos', 'Blusas', 'T-shirts', 'Faldas', 'Shorts', 'Licras', 'Fajas', 'Trajes de Baño', 'Accesorios', 'Lencerias', 'Ropa Interior', 'Camisas','Deportivas', 'Uniformes'],
     Hombre: ['T-shirts', 'Camisas','Poloches', 'Pantalones',' Shorts', 'Zapatos', 'Abrigos', 'Deportiva', 'Accesorios', 'Trajes de Baño', 'Gorras', 'Franelas', 'Deportivas', 'Uniformes'],
     Niños: ['Ropa Bebé', 'Niña', 'Niño', 'Zapatos', 'Accesorios'],
-    Libros: ['Novela', 'Infantil', 'Educativo', 'Cómics', 'Cocina', 'Autoayuda', 'Ciencia Ficción', 'Misterio', 'Otros'],
   }
 
   const conditionOptions = [
@@ -617,28 +616,7 @@ export const SellScreen: React.FC = () => {
     'Juguetes y Juegos': ['Única'],
     'Disfraces': ['Única'],
     'Artículos Deportivos Infantiles': ['Única'],
-    
-    // Libros
-    'Universitarios': ['Único'],
-    'Novelas Románticas': ['Único'],
-    'Negocios': ['Único'],
-    'Autoayuda y Motivación': ['Único'],
-    'Cocina': ['Único'],
-    'Salud y Bienestar': ['Único'],
-    'Religiosos': ['Único'],
-    'Historia Dominicana': ['Único'],
-    'Idiomas': ['Único'],
-    'Infantiles': ['Único'],
-    'Libros': ['Único'],
-    'Novela': ['Único'],
-    'Infantil': ['Único'],
-    'Educativo': ['Único'],
-    'Cómics': ['Único'],
-    'Autoayuda': ['Único'],
-    'Ciencia Ficción': ['Único'],
-    'Misterio': ['Único'],
-    'Otros': ['Único'],
-    
+
     // Sin coincidencia, se usarán tallas por defecto (ver getSortedSizes)
   };
 

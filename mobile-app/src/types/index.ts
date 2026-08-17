@@ -1,3 +1,5 @@
+export * from './product'
+
 export interface Product {
   id: string
   title: string

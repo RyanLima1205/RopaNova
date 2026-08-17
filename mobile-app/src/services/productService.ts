@@ -1,4 +1,5 @@
 import { Product } from '../types'
+import { ProductDetail } from '../types/product'
 import {
   getFirestore,
   collection,
@@ -7,6 +8,7 @@ import {
   getDocsFromServer,
 } from 'firebase/firestore'
 import { app } from '../firebaseConfig'
+import { mapToProductDetail } from './mappers/productMapper'
 
 import { logger } from '../utils/logger'
 /** Sous-titre affiché sous « No se pudieron cargar los productos » (sans consignes techniques). */
@@ -411,4 +413,46 @@ export async function getProduct(id: string): Promise<Product | null> {
     logger.error('❌ Stack trace:', (error as Error).stack);
     return null;
   }
-} 
+}
+
+/**
+ * Fiche produit V1 (REFONTE_PRODUCT_PAGE.md, Phase 2).
+ * Réutilise la même récupération Firestore que getProduct() (mêmes
+ * collections 'products' / 'users'), mais renvoie le modèle ProductDetail
+ * via le mapper au lieu du format Product hérité. N'affecte pas getProduct().
+ */
+export async function getProductDetail(productId: string): Promise<ProductDetail | null> {
+  try {
+    if (!productId || typeof productId !== 'string' || productId.trim() === '') {
+      logger.error('❌ getProductDetail - ID de produit invalide:', productId);
+      return null;
+    }
+
+    const db = getFirestore(app);
+    const productDoc = await getDoc(doc(db, 'products', productId));
+
+    if (!productDoc.exists()) {
+      logger.log('❌ getProductDetail - Produit non trouvé:', productId);
+      return null;
+    }
+
+    const productData = productDoc.data();
+
+    let sellerData: Record<string, unknown> = {};
+    if (productData.userId) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', productData.userId));
+        if (userDoc.exists()) {
+          sellerData = userDoc.data();
+        }
+      } catch (error) {
+        logger.log('❌ getProductDetail - Erreur lors de la récupération du vendeur:', error);
+      }
+    }
+
+    return mapToProductDetail({ ...productData, id: productDoc.id }, sellerData);
+  } catch (error) {
+    logger.error('❌ getProductDetail - Erreur lors de la récupération du produit:', error);
+    return null;
+  }
+}

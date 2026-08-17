@@ -13,20 +13,24 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PinchGestureHandler, PanGestureHandler, State, TapGestureHandler } from 'react-native-gesture-handler';
+import { brandColors } from '../theme';
 
 interface EnhancedSwipeGalleryProps {
   images: string[];
   title: string;
+  onBack?: () => void;
   onShare?: () => void;
   onFavorite?: () => void;
   isFavorited?: boolean;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const MAX_VISIBLE_THUMBNAILS = 4;
 
 export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
   images,
   title,
+  onBack,
   onShare,
   onFavorite,
   isFavorited = false,
@@ -451,6 +455,13 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
           </>
         )}
 
+        {/* Back Button */}
+        {onBack && (
+          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+            <Ionicons name="arrow-back" size={22} color="white" />
+          </TouchableOpacity>
+        )}
+
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           {onShare && (
@@ -485,30 +496,34 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
             </Text>
           </View>
         )}
-
-        {/* Enhanced Dot Indicators */}
-        {validImages.length > 1 && (
-          <View style={styles.dotContainer}>
-            {validImages.map((_, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.dot,
-                  index === currentIndex && styles.activeDot,
-                ]}
-                onPress={() => goToSlide(index)}
-              />
-            ))}
-          </View>
-        )}
-
-        {/* Swipe Hint */}
-        {validImages.length > 1 && currentIndex === 0 && (
-          <View style={styles.swipeHint}>
-            <Text style={styles.swipeHintText}>Toca para ampliar • Desliza para ver más</Text>
-          </View>
-        )}
       </View>
+
+      {/* Thumbnail Strip */}
+      {validImages.length > 1 && (
+        <View style={styles.thumbnailStrip}>
+          {validImages.slice(0, MAX_VISIBLE_THUMBNAILS).map((image, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.thumbnail,
+                index === currentIndex && styles.thumbnailActive,
+              ]}
+              onPress={() => goToSlide(index)}
+            >
+              <Image source={{ uri: image }} style={styles.thumbnailImage} />
+            </TouchableOpacity>
+          ))}
+          {validImages.length > MAX_VISIBLE_THUMBNAILS && (
+            <TouchableOpacity
+              style={styles.thumbnailMore}
+              onPress={() => openFullscreen(MAX_VISIBLE_THUMBNAILS)}
+            >
+              <Text style={styles.thumbnailMoreCount}>+{validImages.length - MAX_VISIBLE_THUMBNAILS}</Text>
+              <Text style={styles.thumbnailMoreLabel}>Ver todas</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Fullscreen Modal */}
       <Modal
@@ -714,6 +729,17 @@ const styles = StyleSheet.create({
   rightButton: {
     right: 8,
   },
+  backButton: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   actionButtons: {
     position: 'absolute',
     top: 16,
@@ -731,8 +757,8 @@ const styles = StyleSheet.create({
   },
   counter: {
     position: 'absolute',
-    top: 16,
-    left: 16,
+    bottom: 16,
+    right: 16,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -743,38 +769,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  dotContainer: {
-    position: 'absolute',
-    bottom: 16,
-    left: '50%',
-    transform: [{ translateX: -50 }],
+  thumbnailStrip: {
     flexDirection: 'row',
     gap: 8,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  activeDot: {
-    backgroundColor: 'white',
-    transform: [{ scale: 1.25 }],
-  },
-  swipeHint: {
-    position: 'absolute',
-    bottom: 64,
-    left: '50%',
-    transform: [{ translateX: -50 }],
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingVertical: 12,
+    backgroundColor: brandColors.surface,
   },
-  swipeHintText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '500',
+  thumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  thumbnailActive: {
+    borderColor: brandColors.primaryUI,
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbnailMore: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: brandColors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbnailMoreCount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: brandColors.primaryUI,
+  },
+  thumbnailMoreLabel: {
+    fontSize: 10,
+    color: brandColors.primaryUI,
   },
   // Fullscreen styles
   fullscreenContainer: {

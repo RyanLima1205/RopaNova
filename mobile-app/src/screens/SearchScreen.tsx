@@ -70,7 +70,6 @@ import {
   AdvancedFilters as AdvancedFiltersType,
 } from '../utils/searchUtils'
 import { searchCacheService } from '../services/searchCacheService'
-import { useFavoriteProductIds } from '../hooks/useFavoriteProductIds'
 
 import { logger } from '../utils/logger'
 type SearchScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ProductDetail'>
@@ -113,7 +112,6 @@ const PAGE_SIZE = 20
 
 export const SearchScreen: React.FC = () => {
   const navigation = useNavigation<SearchScreenNavigationProp>()
-  const { favoriteProductIds } = useFavoriteProductIds()
 
   const flatListRef = useRef<FlatList>(null)
   const scrollOffsetRef = useRef(0)
@@ -652,7 +650,6 @@ export const SearchScreen: React.FC = () => {
         showRating={true}
         showLocation={true}
         showDate={false}
-        isFavorited={favoriteProductIds.includes(item.id)}
       />
     )
   }

@@ -11,16 +11,15 @@ import {
   StatusBar,
   RefreshControl,
   ActivityIndicator,
+  Pressable,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { LinearGradient } from 'expo-linear-gradient'
 import { useNavigation } from '@react-navigation/native'
 import { ProductCard } from '../components/ProductCard'
 import { Logo } from '../components/Logo'
 import { IconButton } from '../components/IconButton'
-import { Card } from '../components/Card'
 import { EmptyState } from '../components/EmptyState'
-import { brandColors, radii, spacing, typography } from '../theme'
+import { brandColors, radii, shadows, spacing, typography } from '../theme'
 import { Product, Category, Subcategory } from '../types'
 import { RootStackParamList } from '../../App'
 import { StackNavigationProp } from '@react-navigation/stack'
@@ -29,10 +28,19 @@ import { getFirestore, doc, getDoc } from 'firebase/firestore'
 import { getProducts, formatProductsLoadError } from '../services/productService'
 import { app } from '../firebaseConfig'
 import { cleanProductImages } from '../utils/imageUtils'
-import { useFavoriteProductIds } from '../hooks/useFavoriteProductIds'
+import { AdvancedFilters } from '../components/AdvancedFilters'
+import {
+  applyAdvancedFilters,
+  extractFilterOptions,
+  AdvancedFilters as AdvancedFiltersType,
+} from '../utils/searchUtils'
 
 import { logger } from '../utils/logger'
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>
+
+// Fond de page légèrement plus foncé que brandColors.background, pour que les cartes
+// blanches (barre de recherche, produits) ressortent davantage — propre à Home.
+const pageBackground = '#F8F9FB'
 
 // Nouvelles options de filtres rapides
 const quickFilters = [
@@ -72,9 +80,27 @@ interface FirestoreProduct {
   }
 }
 
+// Convertit un FirestoreProduct vers le format Product attendu par les utilitaires de recherche
+const firestoreProductToProduct = (fp: FirestoreProduct): Product => ({
+  id: fp.id,
+  title: fp.titulo,
+  price: parseFloat(fp.precio) || 0,
+  image: fp.images[0] || '',
+  location: '',
+  likes: 0,
+  condition: fp.condicionGeneral,
+  images: fp.images,
+  createdAt: fp.createdAt,
+  category: fp.categoria,
+  subcategory: fp.subcategoria,
+  brand: fp.marca,
+  color: fp.color,
+  sizes: fp.talla,
+  seller: fp.seller as Product['seller'],
+})
+
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>()
-  const { favoriteProductIds } = useFavoriteProductIds()
   const [products, setProducts] = useState<FirestoreProduct[]>([])
   const [filteredProducts, setFilteredProducts] = useState<FirestoreProduct[]>([])
   const [selectedCategory, setSelectedCategory] = useState('1')
@@ -84,9 +110,32 @@ export const HomeScreen: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersType>({
+    sizes: [],
+    colors: [],
+    brands: [],
+    locations: [],
+    priceRange: { min: 0, max: 50000 },
+    conditions: [],
+    mainCategory: undefined,
+    subCategory: undefined,
+    distance: {
+      enabled: false,
+      maxDistance: 10,
+    },
+  })
+  const [availableFilterOptions, setAvailableFilterOptions] = useState<ReturnType<typeof extractFilterOptions>>({
+    sizes: [],
+    colors: [],
+    brands: [],
+    locations: [],
+    conditions: [],
+  })
   const scrollViewRef = useRef<ScrollView>(null)
   const scrollOffsetRef = useRef(0)
   const scrollToTopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const featuredSectionYRef = useRef(0)
 
   useEffect(() => {
     loadProducts()
@@ -94,7 +143,7 @@ export const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     applyFilters()
-  }, [products, selectedCategory, selectedSubcategory, activeQuickFilters, searchQuery])
+  }, [products, selectedCategory, selectedSubcategory, activeQuickFilters, searchQuery, advancedFilters])
 
   const loadProducts = async (isRefresh = false) => {
     try {
@@ -194,6 +243,7 @@ export const HomeScreen: React.FC = () => {
 
       logger.log('✅ Produits convertis:', firestoreProducts.length)
       setProducts(firestoreProducts)
+      setAvailableFilterOptions(extractFilterOptions(firestoreProducts.map(firestoreProductToProduct)))
       setLoadError(null)
     } catch (error: unknown) {
       logger.error('❌ Erreur lors du chargement des produits:', error)
@@ -236,9 +286,8 @@ export const HomeScreen: React.FC = () => {
       const beforeCategory = filtered.length
       const categoryMap: { [key: string]: string } = {
         '2': 'Mujer',
-        '3': 'Hombre', 
+        '3': 'Hombre',
         '4': 'Niño',
-        '5': 'Libro'
       }
       const categoryName = categoryMap[selectedCategory]
       logger.log('🏷️ Catégorie sélectionnée:', categoryName)
@@ -303,6 +352,12 @@ export const HomeScreen: React.FC = () => {
       }
     })
 
+    // Filtres avancés (talla, color, marca, precio, condición...)
+    const convertedForFilters = filtered.map(firestoreProductToProduct)
+    const advancedFiltered = applyAdvancedFilters(convertedForFilters, advancedFilters)
+    const advancedIds = advancedFiltered.map(p => p.id)
+    filtered = filtered.filter(fp => advancedIds.includes(fp.id))
+
     logger.log('✅ Produits filtrés final:', filtered.length)
     setFilteredProducts(filtered)
   }
@@ -326,10 +381,6 @@ export const HomeScreen: React.FC = () => {
       // Navigation vers la page de recherche avec la requête
       navigation.navigate('SearchScreen' as any, { searchQuery: searchQuery.trim() })
     }
-  }
-
-  const handleSellPress = () => {
-    navigation.navigate('SellScreen' as any)
   }
 
   const onRefresh = useCallback(async () => {
@@ -379,17 +430,6 @@ export const HomeScreen: React.FC = () => {
 
   // Fonction pour obtenir les filtres rapides selon le contexte
   const getVisibleQuickFilters = () => {
-    // Si catégorie Libro sélectionnée, afficher seulement filtres pertinents pour livres
-    if (selectedCategory === '5') { // ID de la catégorie Libro
-      return quickFilters.filter(filter => 
-        filter.id === 'this-week' || 
-        filter.id === 'under-1000' || 
-        filter.id === 'new' ||
-        filter.id === 'second-hand' ||
-        filter.id === 'verified'
-      )
-    }
-    
     if (selectedSubcategory) {
       // Masquer les filtres non pertinents quand une sous-catégorie est sélectionnée
       return quickFilters.filter(filter => 
@@ -428,7 +468,6 @@ export const HomeScreen: React.FC = () => {
         showRating={true}
         showLocation={true}
         showDate={false}
-        isFavorited={favoriteProductIds.includes(item.id)}
     />
   )
   }
@@ -452,16 +491,26 @@ export const HomeScreen: React.FC = () => {
         </View>
 
         {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color={brandColors.textMuted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar artículos..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={18} color={brandColors.textMuted} style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Buscar artículos o tiendas..."
+              placeholderTextColor="#9CA3AF"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+            />
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.filterButton, pressed && { opacity: 0.85 }]}
+            onPress={() => setShowAdvancedFilters(true)}
+            hitSlop={8}
+          >
+            <Ionicons name="options-outline" size={22} color={brandColors.white} />
+          </Pressable>
         </View>
       </View>
 
@@ -482,23 +531,10 @@ export const HomeScreen: React.FC = () => {
           />
         }
       >
-        {/* Hero Section */}
-        <LinearGradient
-          colors={[brandColors.primaryUI, brandColors.primaryDark, brandColors.primaryDeep]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          locations={[0, 0.55, 1]}
-          style={styles.heroSection}
-        >
-          <Text style={styles.heroTitle}>¡Bienvenido a RopaNova! 🇩🇴</Text>
-          <Text style={styles.heroSubtitle}>
-            Compra y vende ropa de segunda mano en República Dominicana
-          </Text>
-        </LinearGradient>
-
         {/* Category Tabs */}
-        <View style={styles.categoriesContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionLabel}>Categorías</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
             {categories.map((category) => {
               const active = selectedCategory === category.id
               return (
@@ -510,8 +546,8 @@ export const HomeScreen: React.FC = () => {
                   <View style={[styles.categoryIconCircle, active && styles.categoryIconCircleActive]}>
                     <Ionicons
                       name={(category.icon as keyof typeof Ionicons.glyphMap) || 'grid-outline'}
-                      size={22}
-                      color={active ? brandColors.white : brandColors.textSecondary}
+                      size={24}
+                      color={active ? brandColors.white : brandColors.textPrimary}
                     />
                   </View>
                   <Text style={[styles.categoryText, active && styles.categoryTextActive]}>
@@ -525,8 +561,9 @@ export const HomeScreen: React.FC = () => {
 
         {/* Subcategory Tabs - Affichées uniquement si une catégorie spécifique est sélectionnée */}
         {selectedCategory !== '1' && (
-          <View style={styles.subcategoriesContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionLabel}>Subcategorías</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subcategoriesRow}>
               {getSubcategories(selectedCategory).map((subcategory) => (
                 <TouchableOpacity
                   key={subcategory.id}
@@ -551,8 +588,9 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {/* Quick Filters Section */}
-        <View style={styles.quickFiltersSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionLabel}>Filtros rápidos</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickFiltersRow}>
             {getVisibleQuickFilters().map((filter) => {
               const active = activeQuickFilters.includes(filter.id)
               return (
@@ -562,7 +600,10 @@ export const HomeScreen: React.FC = () => {
                   onPress={() => toggleQuickFilter(filter.id)}
                 >
                   <Text style={styles.quickFilterIcon}>{filter.icon}</Text>
-                  <Text style={[styles.quickFilterChipText, active && styles.quickFilterChipTextActive]}>
+                  <Text
+                    style={[styles.quickFilterChipText, active && styles.quickFilterChipTextActive]}
+                    numberOfLines={1}
+                  >
                     {filter.label}
                   </Text>
                 </TouchableOpacity>
@@ -572,13 +613,30 @@ export const HomeScreen: React.FC = () => {
         </View>
 
         {/* Featured Items */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {selectedCategory === '1' 
-              ? 'Artículos Destacados' 
-              : `${filteredProducts.length} productos encontrados`
-            }
-          </Text>
+        <View
+          style={styles.section}
+          onLayout={(e) => { featuredSectionYRef.current = e.nativeEvent.layout.y }}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.sectionTitleRow}>
+              <View style={styles.sectionAccentBar} />
+              <Text style={styles.sectionTitle}>
+                {selectedCategory === '1'
+                  ? 'Artículos Destacados'
+                  : `${filteredProducts.length} productos encontrados`
+                }
+              </Text>
+            </View>
+            {selectedCategory === '1' && (
+              <TouchableOpacity
+                style={styles.seeAllButton}
+                onPress={() => navigation.navigate('SearchScreen' as any)}
+              >
+                <Text style={styles.seeAllText}>Ver todos</Text>
+                <Ionicons name="arrow-forward" size={14} color={brandColors.primaryUI} />
+              </TouchableOpacity>
+            )}
+          </View>
           {loading ? (
             <View style={styles.loadStateBox}>
               <ActivityIndicator size="large" color={brandColors.primaryUI} />
@@ -611,25 +669,18 @@ export const HomeScreen: React.FC = () => {
           />
           )}
         </View>
-
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
-          <View style={styles.quickActions}>
-            <Card onPress={handleSellPress} style={styles.actionCard}>
-              <Ionicons name="add-circle-outline" size={32} color={brandColors.primaryUI} />
-              <Text style={styles.actionTitle}>Vender</Text>
-              <Text style={styles.actionSubtitle}>Publica tu artículo</Text>
-            </Card>
-
-            <Card onPress={handleSearch} style={styles.actionCard}>
-              <Ionicons name="search-outline" size={32} color={brandColors.primaryUI} />
-              <Text style={styles.actionTitle}>Buscar</Text>
-              <Text style={styles.actionSubtitle}>Encuentra lo que buscas</Text>
-            </Card>
-          </View>
-        </View>
       </ScrollView>
+
+      <AdvancedFilters
+        visible={showAdvancedFilters}
+        onClose={() => setShowAdvancedFilters(false)}
+        onApply={(filters) => {
+          setAdvancedFilters(filters)
+          setShowAdvancedFilters(false)
+        }}
+        currentFilters={advancedFilters}
+        availableOptions={availableFilterOptions}
+      />
     </SafeAreaView>
   )
 }
@@ -637,90 +688,99 @@ export const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: brandColors.background,
+    backgroundColor: pageBackground,
   },
   header: {
-    backgroundColor: brandColors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: brandColors.border,
+    backgroundColor: pageBackground,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.xl,
     paddingBottom: spacing.md,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   headerActions: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   searchContainer: {
     position: 'relative',
+    flex: 1,
+  },
+  filterButton: {
+    width: 54,
+    height: 54,
+    borderRadius: radii.card,
+    backgroundColor: '#2F8AFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2F8AFC',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   searchIcon: {
     position: 'absolute',
-    left: spacing.md,
-    top: 15,
+    left: spacing.lg,
+    top: 18,
     zIndex: 1,
   },
   searchInput: {
-    backgroundColor: brandColors.surfaceSecondary,
-    borderWidth: 1.5,
-    borderColor: brandColors.border,
-    borderRadius: radii.medium + 2,
-    height: 48,
-    paddingHorizontal: 40,
+    backgroundColor: brandColors.surface,
+    borderWidth: 0,
+    borderRadius: radii.card,
+    height: 54,
+    paddingHorizontal: 44,
     fontFamily: typography.body.fontFamily,
     fontSize: typography.body.fontSize,
     color: brandColors.textPrimary,
+    ...shadows.card,
   },
   content: {
     flex: 1,
+    backgroundColor: pageBackground,
   },
-  heroSection: {
-    borderRadius: radii.large,
-    overflow: 'hidden',
-    marginHorizontal: spacing.lg,
+  sectionBlock: {
     marginTop: spacing.lg,
-    padding: spacing.xxl,
-  },
-  heroTitle: {
-    fontFamily: typography.sectionTitle.fontFamily,
-    fontSize: typography.sectionTitle.fontSize,
-    color: brandColors.white,
-    marginBottom: spacing.xs,
-  },
-  heroSubtitle: {
-    fontFamily: typography.body.fontFamily,
-    fontSize: typography.body.fontSize,
-    color: brandColors.primaryExtraLight,
-  },
-  categoriesContainer: {
-    backgroundColor: brandColors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: brandColors.border,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+  },
+  sectionLabel: {
+    fontFamily: typography.sectionTitle.fontFamily,
+    fontSize: 16,
+    color: brandColors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  categoriesRow: {
+    paddingRight: spacing.lg,
   },
   categoryButton: {
     alignItems: 'center',
-    width: 68,
-    marginRight: spacing.xs,
+    width: 76,
+    marginRight: spacing.md,
   },
   categoryIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: brandColors.surfaceSecondary,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: brandColors.surface,
+    borderWidth: 1,
+    borderColor: brandColors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs,
   },
   categoryIconCircleActive: {
     backgroundColor: brandColors.primaryUI,
+    borderColor: brandColors.primaryUI,
   },
   categoryText: {
     fontFamily: typography.caption.fontFamily,
@@ -732,106 +792,100 @@ const styles = StyleSheet.create({
     color: brandColors.primaryUI,
     fontFamily: typography.bodyMedium.fontFamily,
   },
-  subcategoriesContainer: {
-    backgroundColor: brandColors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: brandColors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+  subcategoriesRow: {
+    paddingRight: spacing.lg,
   },
   subcategoryButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    height: 40,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
     marginRight: spacing.sm,
-    borderRadius: radii.pill,
+    borderRadius: 14,
+    backgroundColor: brandColors.surface,
     borderWidth: 1,
     borderColor: brandColors.border,
-    backgroundColor: brandColors.surface,
   },
   subcategoryButtonActive: {
     backgroundColor: brandColors.primaryUI,
     borderColor: brandColors.primaryUI,
   },
   subcategoryText: {
-    fontFamily: typography.caption.fontFamily,
-    fontSize: 11,
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontSize: 13,
     color: brandColors.textSecondary,
   },
   subcategoryTextActive: {
     color: brandColors.white,
   },
-  quickFiltersSection: {
-    backgroundColor: brandColors.surface,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: brandColors.border,
+  quickFiltersRow: {
+    paddingRight: spacing.lg,
   },
   quickFilterChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    height: 40,
+    paddingHorizontal: spacing.lg,
     marginRight: spacing.sm,
-    borderRadius: radii.medium,
-    borderWidth: 1,
-    borderColor: brandColors.border,
+    borderRadius: radii.pill,
     backgroundColor: brandColors.surface,
-    minWidth: 92,
+    gap: spacing.sm,
+    ...shadows.card,
   },
   quickFilterChipActive: {
-    backgroundColor: brandColors.primaryExtraLight,
-    borderColor: brandColors.primaryUI,
+    backgroundColor: brandColors.primaryUI,
   },
   quickFilterIcon: {
-    fontSize: 18,
-    marginBottom: 4,
+    fontSize: 15,
   },
   quickFilterChipText: {
-    fontFamily: typography.caption.fontFamily,
-    fontSize: 11,
-    color: brandColors.textSecondary,
-    textAlign: 'center',
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontSize: 12,
+    lineHeight: 15,
+    color: brandColors.textPrimary,
+    maxWidth: 96,
   },
   quickFilterChipTextActive: {
-    color: brandColors.primaryUI,
+    color: brandColors.white,
     fontFamily: typography.bodyMedium.fontFamily,
   },
   section: {
-    padding: spacing.sm,
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  sectionAccentBar: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: brandColors.primaryUI,
   },
   sectionTitle: {
     fontFamily: typography.sectionTitle.fontFamily,
-    fontSize: typography.sectionTitle.fontSize,
+    fontSize: 18,
     color: brandColors.textPrimary,
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.sm,
+  },
+  seeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  seeAllText: {
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontSize: typography.body.fontSize,
+    color: brandColors.primaryUI,
   },
   productRow: {
     justifyContent: 'space-between',
-    paddingHorizontal: 2, // Petit padding pour éviter que les cartes touchent les bords
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
-  actionCard: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  actionTitle: {
-    fontFamily: typography.cardTitle.fontFamily,
-    fontSize: typography.cardTitle.fontSize,
-    color: brandColors.textPrimary,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  actionSubtitle: {
-    fontFamily: typography.caption.fontFamily,
-    fontSize: typography.caption.fontSize,
-    color: brandColors.textSecondary,
-    textAlign: 'center',
   },
   loadStateBox: {
     padding: spacing.xxl,

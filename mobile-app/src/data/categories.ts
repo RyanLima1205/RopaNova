@@ -65,24 +65,6 @@ export const categories: Category[] = [
       { id: '4.8', name: 'Disfraces', parentId: '4' },
     ],
   },
-
-  {
-    id: '5',
-    name: 'Libro',
-    icon: 'book-outline',
-    subcategories: [
-      { id: '5.1', name: 'Universitarios', parentId: '5' },
-      { id: '5.2', name: 'Novelas Románticas', parentId: '5' },
-      { id: '5.3', name: 'Negocios', parentId: '5' },
-      { id: '5.4', name: 'Autoayuda y Motivación', parentId: '5' },
-      { id: '5.5', name: 'Cocina', parentId: '5' },
-      { id: '5.6', name: 'Salud y Bienestar', parentId: '5' },
-      { id: '5.7', name: 'Religiosos', parentId: '5' },
-      { id: '5.8', name: 'Historia Dominicana', parentId: '5' },
-      { id: '5.9', name: 'Idiomas', parentId: '5' },
-      { id: '5.10', name: 'Infantiles', parentId: '5' },
-    ],
-  },
 ]
 
 export const getSubcategories = (categoryId: string) => {
