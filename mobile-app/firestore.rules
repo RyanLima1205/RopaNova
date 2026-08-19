@@ -342,6 +342,18 @@ service cloud.firestore {
     }
 
     // ==========================================
+    // COLLECTION: FOLLOWS (seguimiento de tiendas)
+    // ==========================================
+    match /follows/{followId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.followerId == request.auth.uid);
+      allow create: if isAuthenticated()
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.keys().hasAll(['followerId', 'storeId', 'createdAt'])
+        && followId == request.auth.uid + '_' + request.resource.data.storeId;
+      allow delete: if isAuthenticated() && (resource == null || resource.data.followerId == request.auth.uid);
+    }
+
+    // ==========================================
     // BLOQUER TOUTE AUTRE COLLECTION
     // ==========================================
     match /{document=**} {

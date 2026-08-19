@@ -1,4 +1,5 @@
 export * from './product'
+export * from './store'
 
 export interface Product {
   id: string

@@ -12,6 +12,7 @@ import { useProductActions } from './hooks/useProductActions'
 import { useReportProduct } from './hooks/useReportProduct'
 import { useRelatedProducts } from './hooks/useRelatedProducts'
 import { ProductGallery } from './components/ProductGallery'
+import { ProductDetailSkeleton } from './components/ProductDetailSkeleton'
 import { ProductIdentityCard } from './components/ProductIdentityCard'
 import { TrustRow } from './components/TrustRow'
 import { ProductDescription } from './components/ProductDescription'
@@ -41,9 +42,9 @@ export const ProductDetailScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.centered}>
-        <Ionicons name="refresh" size={32} color={brandColors.primaryUI} />
-        <Text style={styles.centeredText}>Cargando producto...</Text>
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+        <ProductDetailSkeleton />
       </SafeAreaView>
     )
   }

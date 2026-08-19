@@ -1,6 +1,7 @@
 
 import { useEffect, useRef } from 'react'
 import { View, Image } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native'
 import type { NavigatorScreenParams } from '@react-navigation/native'
 import { createStackNavigator } from '@react-navigation/stack'
@@ -16,6 +17,7 @@ import { SellScreen } from './src/screens/SellScreen'
 import { MessagesScreen } from './src/screens/MessagesScreen'
 import { ChatScreen } from './src/screens/ChatScreen'
 import { ProfileScreen } from './src/screens/ProfileScreen'
+import { StoreScreen } from './src/screens/Store/StoreScreen'
 import { ProductDetailScreen } from './src/screens/ProductDetail/ProductDetailScreen'
 import { DashboardScreen } from './src/screens/DashboardScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
@@ -207,15 +209,17 @@ const TabNavigator = () => {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ErrorBoundary>
-        <AuthProvider>
-          <FavoritesProvider>
-            <MainAppContent />
-          </FavoritesProvider>
-        </AuthProvider>
-      </ErrorBoundary>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <FavoritesProvider>
+              <MainAppContent />
+            </FavoritesProvider>
+          </AuthProvider>
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -274,7 +278,7 @@ function MainAppContent() {
         <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
         <Stack.Screen name="Messages" component={MessagesScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />
-        <Stack.Screen name="UserProfile" component={ProfileScreen} />
+        <Stack.Screen name="UserProfile" component={StoreScreen} />
         <Stack.Screen name="SellerReviews" component={SellerReviewsScreen} />
         <Stack.Screen name="WriteReview" component={WriteReviewScreen} />
           <Stack.Screen name="Buy" component={BuyScreen} />

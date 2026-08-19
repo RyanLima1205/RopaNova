@@ -1,8 +1,12 @@
-import React, { useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import React, { useEffect, useRef, useState } from 'react'
+import { View, Text, TouchableOpacity, Animated, LayoutAnimation, Platform, UIManager, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { brandColors, spacing, typography } from '../../../theme'
 import { ProductBasicInfo } from '../../../types/product'
+
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true)
+}
 
 interface ProductDetailsAccordionProps {
   info: ProductBasicInfo
@@ -17,7 +21,12 @@ const formatCreatedAt = (isoDate: string): string => {
 /** "Detalles", replié par défaut. */
 export function ProductDetailsAccordion({ info }: ProductDetailsAccordionProps) {
   const [open, setOpen] = useState(false)
+  const rotation = useRef(new Animated.Value(0)).current
   const publishedLabel = formatCreatedAt(info.createdAt)
+
+  useEffect(() => {
+    Animated.timing(rotation, { toValue: open ? 1 : 0, duration: 250, useNativeDriver: true }).start()
+  }, [open, rotation])
 
   const rows: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }[] = [
     { icon: 'pricetag-outline' as const, label: 'Categoría', value: info.category },
@@ -30,11 +39,26 @@ export function ProductDetailsAccordion({ info }: ProductDetailsAccordionProps) 
 
   if (rows.length === 0) return null
 
+  const toggleOpen = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    setOpen((value) => !value)
+  }
+
+  const arrowStyle = {
+    transform: [
+      {
+        rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }),
+      },
+    ],
+  }
+
   return (
     <View style={styles.wrap}>
-      <TouchableOpacity style={styles.header} onPress={() => setOpen((value) => !value)}>
+      <TouchableOpacity style={styles.header} onPress={toggleOpen}>
         <Text style={styles.title}>Detalles</Text>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={brandColors.textSecondary} />
+        <Animated.View style={arrowStyle}>
+          <Ionicons name="chevron-down" size={18} color={brandColors.textSecondary} />
+        </Animated.View>
       </TouchableOpacity>
       {open && (
         <View style={styles.list}>

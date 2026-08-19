@@ -1,43 +1,38 @@
 import React from 'react'
 import { View, Text, ScrollView, StyleSheet } from 'react-native'
-import { ProductCard } from '../../../components/ProductCard'
-import { spacing, brandColors, typography } from '../../../theme'
+import { ProductCard } from '../../../../components/ProductCard'
+import { ProductCardData } from '../../../ProductDetail/components/RelatedProducts'
+import { brandColors, spacing, typography } from '../../../../theme'
 
-/** Forme minimale attendue par <ProductCard/> — alimentée par la Phase 4. */
-export interface ProductCardData {
-  id: string
-  title: string
-  price: string
-  condition: string
-  images: string[]
-  createdAt: unknown
-  category: string
-  subcategory: string
-  brand: string
-  color: string[]
-  talla?: string[]
-}
-
-interface RelatedProductsProps {
+interface NewArrivalsSectionProps {
   products: ProductCardData[]
   onProductPress: (productId: string) => void
 }
 
-/** "También podría gustarte" — état vide propre : rien tant qu'il n'y a rien à montrer. */
-export function RelatedProducts({ products, onProductPress }: RelatedProductsProps) {
+const CARD_WIDTH = 168
+const MAX_ITEMS = 10
+
+/**
+ * PRO + ELITE. Le switch de SectionRenderer ne garde pas cette section (contrairement à
+ * FEATURED/COLLECTIONS/PROMO/REVIEWS) : c'est ce composant qui décide de ne rien afficher
+ * s'il n'y a aucun produit, plutôt qu'un titre flottant au-dessus du vide.
+ */
+export function NewArrivalsSection({ products, onProductPress }: NewArrivalsSectionProps) {
   if (products.length === 0) return null
+
+  const items = products.slice(0, MAX_ITEMS)
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>También podría gustarte</Text>
+      <Text style={styles.title}>Recién llegados</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.row}
-        snapToInterval={CARD_WIDTH + 8}
+        snapToInterval={CARD_WIDTH + spacing.sm}
         decelerationRate="fast"
       >
-        {products.map((product) => (
+        {items.map((product) => (
           <ProductCard
             key={product.id}
             product={product}
@@ -50,8 +45,6 @@ export function RelatedProducts({ products, onProductPress }: RelatedProductsPro
     </View>
   )
 }
-
-const CARD_WIDTH = 168
 
 const styles = StyleSheet.create({
   wrap: {

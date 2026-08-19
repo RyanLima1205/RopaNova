@@ -122,7 +122,7 @@ const GENDERS = [
 ];
 
 const forbiddenUsernames = ['admin', 'support', 'root', 'administrator', 'moderator'];
-const usernameRegex = /^[a-z0-9._-]{3,20}$/;
+const usernameRegex = /^[a-z0-9_-]{3,20}$/;
 
 // Coordonnées de la République dominicaine
 const DOMINICAN_REPUBLIC_REGION = {
@@ -391,7 +391,7 @@ const RegisterScreen: React.FC = ({ navigation, route }: any) => {
   const validateUsername = async (value: string) => {
     setCheckingUsername(true);
     if (!usernameRegex.test(value)) {
-      setUsernameError('El nombre de usuario debe tener entre 3 y 20 caracteres, solo minúsculas, cifras, ".", "_", "-".');
+      setUsernameError('El nombre de usuario debe tener entre 3 y 20 caracteres, solo minúsculas, cifras, "_", "-".');
       setCheckingUsername(false);
       return false;
     }
@@ -495,7 +495,7 @@ const RegisterScreen: React.FC = ({ navigation, route }: any) => {
               value={form.username}
               onChangeText={async (v) => {
                 // Force la minuscule
-                const lower = v.replace(/[^a-z0-9._-]/g, '').toLowerCase();
+                const lower = v.replace(/[^a-z0-9_-]/g, '').toLowerCase();
                 handleChange('username', lower);
                 await validateUsername(lower);
               }}

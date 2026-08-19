@@ -1,4 +1,4 @@
-                 import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { PinchGestureHandler, PanGestureHandler, State, TapGestureHandler } from 'react-native-gesture-handler';
+import { PanGestureHandler, PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { brandColors } from '../theme';
 
 interface EnhancedSwipeGalleryProps {
@@ -26,6 +26,11 @@ interface EnhancedSwipeGalleryProps {
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const MAX_VISIBLE_THUMBNAILS = 4;
+const PINCH_MIN_SCALE = 1;
+const PINCH_MAX_SCALE = 4;
+const PINCH_RESET_THRESHOLD = 1.2;
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
   images,
@@ -41,17 +46,68 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
     const trimmed = img.trim()
     return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== 'file://'
   })
-  
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
   const [fullscreenIndex, setFullscreenIndex] = useState(0);
-  const [scale, setScale] = useState(1);
-  const [translateX, setTranslateX] = useState(0);
-  const [translateY, setTranslateY] = useState(0);
-  
+  // Index de l'image actuellement zoomée — seule celle-ci laisse le PanGestureHandler
+  // capter le geste, pour ne jamais gêner le swipe horizontal des autres images.
+  const [zoomedIndex, setZoomedIndex] = useState<number | null>(null);
+
   const scrollViewRef = useRef<ScrollView>(null);
   const fullscreenScrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Zoom + déplacement (pinch + pan) — uniquement dans le Modal plein écran. Un jeu de
+  // valeurs par image, pour que zoomer/déplacer une photo n'affecte pas les autres.
+  const fullscreenScales = useMemo(
+    () => validImages.map(() => new Animated.Value(1)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [validImages.length],
+  );
+  const fullscreenTranslateX = useMemo(
+    () => validImages.map(() => new Animated.Value(0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [validImages.length],
+  );
+  const fullscreenTranslateY = useMemo(
+    () => validImages.map(() => new Animated.Value(0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [validImages.length],
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const panRefs = useMemo(() => validImages.map(() => React.createRef<PanGestureHandler>()), [validImages.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pinchRefs = useMemo(() => validImages.map(() => React.createRef<PinchGestureHandler>()), [validImages.length]);
+
+  // Valeurs numériques "live" côté JS (un Animated.Value ne se lit pas de façon synchrone).
+  const currentScalesRef = useRef<number[]>(validImages.map(() => 1));
+  const currentTranslateXRef = useRef<number[]>(validImages.map(() => 0));
+  const currentTranslateYRef = useRef<number[]>(validImages.map(() => 0));
+  // Position de départ du pan en cours (le geste ne fournit qu'un delta depuis son début).
+  const panBaseXRef = useRef<number[]>(validImages.map(() => 0));
+  const panBaseYRef = useRef<number[]>(validImages.map(() => 0));
+
+  const resetZoom = (index: number) => {
+    fullscreenScales[index]?.setValue(1);
+    fullscreenTranslateX[index]?.setValue(0);
+    fullscreenTranslateY[index]?.setValue(0);
+    currentScalesRef.current[index] = 1;
+    currentTranslateXRef.current[index] = 0;
+    currentTranslateYRef.current[index] = 0;
+  };
+
+  // Réinitialise le zoom/déplacement de l'image qu'on vient de quitter au changement de photo.
+  const previousFullscreenIndexRef = useRef(fullscreenIndex);
+  useEffect(() => {
+    const previousIndex = previousFullscreenIndexRef.current;
+    if (previousIndex !== fullscreenIndex) {
+      resetZoom(previousIndex);
+      setZoomedIndex((current) => (current === previousIndex ? null : current));
+    }
+    previousFullscreenIndexRef.current = fullscreenIndex;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreenIndex]);
 
   // Auto-play functionality (only when not in fullscreen)
   useEffect(() => {
@@ -69,14 +125,14 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
     return () => clearInterval(interval);
   }, [currentIndex, images.length, fullscreenVisible]);
 
-  const handleScroll = (event: any) => {
+  // Se déclenche une seule fois quand le scroll s'arrête — plus de scintillement du compteur.
+  const handleMomentumScrollEnd = (event: any) => {
     const contentOffset = event.nativeEvent.contentOffset.x;
-    const imageWidth = screenWidth; // Chaque image occupe toujours screenWidth
-    const index = Math.round(contentOffset / imageWidth);
+    const index = Math.round(contentOffset / screenWidth); // Chaque image occupe toujours screenWidth
     setCurrentIndex(index);
   };
 
-  const handleFullscreenScroll = (event: any) => {
+  const handleFullscreenMomentumScrollEnd = (event: any) => {
     const contentOffset = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffset / screenWidth);
     setFullscreenIndex(index);
@@ -119,42 +175,15 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
   };
 
   const openFullscreen = (index: number) => {
+    // Départ toujours dézoomé, même si cette image avait été zoomée lors d'une session précédente.
+    resetZoom(index);
+    setZoomedIndex(null);
     setFullscreenIndex(index);
     setFullscreenVisible(true);
-    setScale(1);
-    setTranslateX(0);
-    setTranslateY(0);
   };
 
   const closeFullscreen = () => {
     setFullscreenVisible(false);
-    setScale(1);
-    setTranslateX(0);
-    setTranslateY(0);
-    
-    // Réinitialiser immédiatement les valeurs animées
-    scaleValue.setValue(1);
-    translateXValue.setValue(0);
-    translateYValue.setValue(0);
-    
-    // Reset animated values
-    Animated.parallel([
-      Animated.timing(scaleValue, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: false,
-      }),
-      Animated.timing(translateXValue, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: false,
-      }),
-      Animated.timing(translateYValue, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: false,
-      }),
-    ]).start();
   };
 
   const handleFavoritePress = () => {
@@ -176,188 +205,87 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
     }
   };
 
-  const scaleValue = useRef(new Animated.Value(1)).current;
-  const translateXValue = useRef(new Animated.Value(0)).current;
-  const translateYValue = useRef(new Animated.Value(0)).current;
-  
-  // Pour le double-tap
-  const doubleTapRef = useRef(null);
-  const lastTap = useRef(0);
+  // --- Pinch + pan (zoom plein écran uniquement) ---
 
-  const onPinchGestureEvent = Animated.event(
-    [{ nativeEvent: { scale: scaleValue } }],
-    { 
-      useNativeDriver: false,
-      listener: (event: any) => {
-        // Empêcher le dézoom en temps réel
-        const currentScale = event.nativeEvent.scale;
-        if (currentScale < 1) {
-          // Bloquer le dézoom en gardant l'échelle minimale à 1
-          scaleValue.setValue(1);
-        }
-      }
+  /** Fin de pinch OU de pan : sous le seuil, on revient à 1/0/0 ; sinon on garde l'état. */
+  const finishFullscreenGesture = (index: number) => {
+    const finalScale = currentScalesRef.current[index] ?? 1;
+
+    if (finalScale < PINCH_RESET_THRESHOLD) {
+      Animated.spring(fullscreenScales[index], { toValue: 1, useNativeDriver: true }).start();
+      Animated.spring(fullscreenTranslateX[index], { toValue: 0, useNativeDriver: true }).start();
+      Animated.spring(fullscreenTranslateY[index], { toValue: 0, useNativeDriver: true }).start();
+      currentScalesRef.current[index] = 1;
+      currentTranslateXRef.current[index] = 0;
+      currentTranslateYRef.current[index] = 0;
+      fullscreenScrollViewRef.current?.setNativeProps({ scrollEnabled: true });
+      setZoomedIndex((current) => (current === index ? null : current));
     }
-  );
+    // Sinon : on reste zoomé/déplacé (scrollEnabled reste désactivé pour éviter le conflit
+    // swipe/zoom) jusqu'à ce que l'utilisateur re-pince en dessous du seuil.
+  };
 
-  const onPinchHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.state === State.BEGAN) {
-      // Réinitialiser les valeurs au début du zoom
-      scaleValue.setValue(scale);
-      // Désactiver immédiatement le défilement horizontal
-      if (scrollViewRef.current) {
-        scrollViewRef.current.setNativeProps({ scrollEnabled: false });
-      }
-      if (fullscreenScrollViewRef.current) {
-        fullscreenScrollViewRef.current.setNativeProps({ scrollEnabled: false });
-      }
-    } else if (event.nativeEvent.state === State.END) {
-      // Empêcher le dézoom - seulement permettre l'agrandissement
-      const newScale = Math.max(1, Math.min(event.nativeEvent.scale, 3));
-      
-      // Si l'utilisateur essaie de dézoomer (scale < 1), on garde l'échelle actuelle
-      if (event.nativeEvent.scale < 1) {
-        // Ne rien faire - garder l'échelle actuelle
-        return;
-      }
-      
-      setScale(newScale);
-      
-      // Reset position if scale is 1
-      if (newScale <= 1) {
-        setTranslateX(0);
-        setTranslateY(0);
-        // Réactiver le défilement horizontal
-        if (scrollViewRef.current) {
-          scrollViewRef.current.setNativeProps({ scrollEnabled: true });
-        }
-        if (fullscreenScrollViewRef.current) {
-          fullscreenScrollViewRef.current.setNativeProps({ scrollEnabled: true });
-        }
-        Animated.parallel([
-          Animated.timing(translateXValue, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-          Animated.timing(translateYValue, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-        ]).start();
-      }
+  // Fonction JS ordinaire (pas Animated.event) : le native driver ne supporte pas
+  // l'imbrication PanGestureHandler + PinchGestureHandler avec Animated.event.
+  const onFullscreenPinchGestureEvent = (index: number) => (event: any) => {
+    const { scale: gestureScale, focalX, focalY } = event.nativeEvent;
+    const clampedScale = clamp(gestureScale, PINCH_MIN_SCALE, PINCH_MAX_SCALE);
+    currentScalesRef.current[index] = clampedScale;
+    fullscreenScales[index].setValue(clampedScale);
+
+    // Le point sous les doigts reste fixe pendant qu'on zoome autour de lui.
+    const focalOffsetX = (focalX - screenWidth / 2) * (clampedScale - 1);
+    const focalOffsetY = (focalY - screenHeight / 2) * (clampedScale - 1);
+    fullscreenTranslateX[index].setValue(focalOffsetX);
+    fullscreenTranslateY[index].setValue(focalOffsetY);
+    currentTranslateXRef.current[index] = focalOffsetX;
+    currentTranslateYRef.current[index] = focalOffsetY;
+  };
+
+  const onFullscreenPinchHandlerStateChange = (index: number) => (event: any) => {
+    const { state } = event.nativeEvent;
+
+    if (state === State.BEGAN) {
+      fullscreenScrollViewRef.current?.setNativeProps({ scrollEnabled: false });
+      setZoomedIndex(index);
+      return;
+    }
+
+    if (state === State.END || state === State.CANCELLED || state === State.FAILED) {
+      finishFullscreenGesture(index);
     }
   };
 
-  // Gestionnaire pour le glissement (pan)
-  const onPanGestureEvent = Animated.event(
-    [{ nativeEvent: { translationX: translateXValue, translationY: translateYValue } }],
-    { useNativeDriver: false }
-  );
+  const onFullscreenPanGestureEvent = (index: number) => (event: any) => {
+    // Seulement actif si l'image est zoomée.
+    if (currentScalesRef.current[index] <= 1) return;
 
-  const onPanHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.state === State.BEGAN) {
-      // Réinitialiser les valeurs de translation au début du geste
-      translateXValue.setValue(translateX);
-      translateYValue.setValue(translateY);
-    } else if (event.nativeEvent.state === State.END) {
-      // Calculer les nouvelles positions
-      const newTranslateX = translateX + event.nativeEvent.translationX;
-      const newTranslateY = translateY + event.nativeEvent.translationY;
-      
-      // Limiter le déplacement pour que l'image reste visible
-      const maxTranslateX = Math.max(0, (scale - 1) * screenWidth / 2);
-      const maxTranslateY = Math.max(0, (scale - 1) * screenHeight / 2);
-      
-      const clampedTranslateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, newTranslateX));
-      const clampedTranslateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, newTranslateY));
-      
-      // Mettre à jour les états
-      setTranslateX(clampedTranslateX);
-      setTranslateY(clampedTranslateY);
-      
-      // Animer vers les nouvelles positions
-      Animated.parallel([
-        Animated.timing(translateXValue, {
-          toValue: clampedTranslateX,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-        Animated.timing(translateYValue, {
-          toValue: clampedTranslateY,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-      ]).start();
-    }
+    const { translationX, translationY } = event.nativeEvent;
+    const scale = currentScalesRef.current[index];
+    const maxTranslateX = (screenWidth * (scale - 1)) / 2;
+    const maxTranslateY = (screenHeight * (scale - 1)) / 2;
+
+    const nextX = clamp(panBaseXRef.current[index] + translationX, -maxTranslateX, maxTranslateX);
+    const nextY = clamp(panBaseYRef.current[index] + translationY, -maxTranslateY, maxTranslateY);
+
+    fullscreenTranslateX[index].setValue(nextX);
+    fullscreenTranslateY[index].setValue(nextY);
+    currentTranslateXRef.current[index] = nextX;
+    currentTranslateYRef.current[index] = nextY;
   };
 
-  // Gestionnaire pour le double-tap
-  const onDoubleTap = (event: any) => {
-    const now = Date.now();
-    const DOUBLE_TAP_DELAY = 300;
-    
-    if (lastTap.current && (now - lastTap.current) < DOUBLE_TAP_DELAY) {
-      // Double-tap détecté
-      if (scale > 1) {
-        // Si déjà zoomé, dézoomer
-        setScale(1);
-        setTranslateX(0);
-        setTranslateY(0);
-        
-        // Réinitialiser les valeurs animées
-        scaleValue.setValue(1);
-        translateXValue.setValue(0);
-        translateYValue.setValue(0);
-        
-        // Réactiver le défilement horizontal
-        if (scrollViewRef.current) {
-          scrollViewRef.current.setNativeProps({ scrollEnabled: true });
-        }
-        if (fullscreenScrollViewRef.current) {
-          fullscreenScrollViewRef.current.setNativeProps({ scrollEnabled: true });
-        }
-        
-        Animated.parallel([
-          Animated.timing(scaleValue, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-          Animated.timing(translateXValue, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-          Animated.timing(translateYValue, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-        ]).start();
-      } else {
-        // Zoomer à 2x
-        setScale(2);
-        
-        // Réinitialiser les valeurs animées
-        scaleValue.setValue(2);
-        
-        // Désactiver le défilement horizontal
-        if (scrollViewRef.current) {
-          scrollViewRef.current.setNativeProps({ scrollEnabled: false });
-        }
-        if (fullscreenScrollViewRef.current) {
-          fullscreenScrollViewRef.current.setNativeProps({ scrollEnabled: false });
-        }
-        
-        Animated.timing(scaleValue, {
-          toValue: 2,
-          duration: 200,
-          useNativeDriver: false,
-        }).start();
-      }
+  const onFullscreenPanHandlerStateChange = (index: number) => (event: any) => {
+    const { state } = event.nativeEvent;
+
+    if (state === State.BEGAN) {
+      panBaseXRef.current[index] = currentTranslateXRef.current[index];
+      panBaseYRef.current[index] = currentTranslateYRef.current[index];
+      return;
     }
-    lastTap.current = now;
+
+    if (state === State.END || state === State.CANCELLED || state === State.FAILED) {
+      finishFullscreenGesture(index);
+    }
   };
 
   if (validImages.length === 0) {
@@ -375,64 +303,29 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
   return (
     <>
       <View style={styles.container}>
-        {/* Main Image Container */}
+        {/* Main Image Container — swipe horizontal uniquement, pas de pinch-to-zoom */}
         <ScrollView
           ref={scrollViewRef}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
           style={styles.scrollView}
-          scrollEnabled={scale <= 1} // Désactiver le défilement quand zoomé
-          bounces={false} // Désactiver le rebond
-          decelerationRate="fast" // Défilement plus rapide
+          decelerationRate="fast"
         >
-                      {images.map((image, index) => (
-              <View key={index} style={styles.imageContainer}>
-              <TapGestureHandler
-                ref={doubleTapRef}
-                onActivated={onDoubleTap}
-                numberOfTaps={1}
+          {images.map((image, index) => (
+            <View key={index} style={styles.imageContainer}>
+              <TouchableOpacity
+                style={styles.imageTouchable}
+                onPress={() => openFullscreen(index)}
+                activeOpacity={0.9}
               >
-                <Animated.View style={styles.tapContainer}>
-                  <PanGestureHandler
-                    onGestureEvent={onPanGestureEvent}
-                    onHandlerStateChange={onPanHandlerStateChange}
-                    enabled={scale > 1}
-                  >
-                    <Animated.View style={styles.panContainer}>
-                      <PinchGestureHandler
-                        onGestureEvent={onPinchGestureEvent}
-                        onHandlerStateChange={onPinchHandlerStateChange}
-                      >
-                        <Animated.View style={styles.pinchContainer}>
-                          <TouchableOpacity
-                            style={styles.imageTouchable}
-                            onPress={() => openFullscreen(index)}
-                            activeOpacity={0.9}
-                          >
-                            <Animated.Image
-                              source={{ uri: image || 'https://via.placeholder.com/400x400?text=Sin+imagen' }}
-                              style={[
-                                styles.image,
-                                {
-                                  transform: [
-                                    { scale: scaleValue },
-                                    { translateX: translateXValue },
-                                    { translateY: translateYValue },
-                                  ],
-                                },
-                              ]}
-                              resizeMode="cover"
-                            />
-                          </TouchableOpacity>
-                        </Animated.View>
-                      </PinchGestureHandler>
-                    </Animated.View>
-                  </PanGestureHandler>
-                </Animated.View>
-              </TapGestureHandler>
+                <Image
+                  source={{ uri: image || 'https://via.placeholder.com/400x400?text=Sin+imagen' }}
+                  style={styles.image}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
             </View>
           ))}
         </ScrollView>
@@ -571,60 +464,62 @@ export const EnhancedSwipeGallery: React.FC<EnhancedSwipeGalleryProps> = ({
             </View>
           </View>
 
-          {/* Fullscreen Image Gallery */}
+          {/* Fullscreen Image Gallery — swipe horizontal + pinch/pan zoom par image */}
           <ScrollView
             ref={fullscreenScrollViewRef}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            onScroll={handleFullscreenScroll}
-            scrollEventThrottle={16}
+            onMomentumScrollEnd={handleFullscreenMomentumScrollEnd}
             style={styles.fullscreenScrollView}
-            scrollEnabled={scale <= 1} // Désactiver le défilement quand zoomé
-            bounces={false} // Désactiver le rebond
-            decelerationRate="fast" // Défilement plus rapide
+            decelerationRate="fast"
           >
-            {validImages.map((image, index) => (
-              <View key={index} style={styles.fullscreenImageContainer}>
-                <TapGestureHandler
-                  ref={doubleTapRef}
-                  onActivated={onDoubleTap}
-                  numberOfTaps={1}
-                >
-                  <Animated.View style={styles.fullscreenTapContainer}>
-                    <PanGestureHandler
-                      onGestureEvent={onPanGestureEvent}
-                      onHandlerStateChange={onPanHandlerStateChange}
-                      enabled={scale > 1}
+            {validImages.map((image, index) => {
+              const clampedScale = fullscreenScales[index].interpolate({
+                inputRange: [PINCH_MIN_SCALE, PINCH_MAX_SCALE],
+                outputRange: [PINCH_MIN_SCALE, PINCH_MAX_SCALE],
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              });
+
+              return (
+                <View key={index} style={styles.fullscreenImageContainer}>
+                  <PanGestureHandler
+                    ref={panRefs[index]}
+                    simultaneousHandlers={[pinchRefs[index]]}
+                    enabled={zoomedIndex === index}
+                    onGestureEvent={onFullscreenPanGestureEvent(index)}
+                    onHandlerStateChange={onFullscreenPanHandlerStateChange(index)}
+                  >
+                    <PinchGestureHandler
+                      ref={pinchRefs[index]}
+                      simultaneousHandlers={[panRefs[index]]}
+                      onGestureEvent={onFullscreenPinchGestureEvent(index)}
+                      onHandlerStateChange={onFullscreenPinchHandlerStateChange(index)}
                     >
-                      <Animated.View style={styles.fullscreenPanContainer}>
-                        <PinchGestureHandler
-                          onGestureEvent={onPinchGestureEvent}
-                          onHandlerStateChange={onPinchHandlerStateChange}
-                        >
-                          <Animated.View style={styles.fullscreenPinchContainer}>
-                                                    <Animated.Image
+                      <Animated.View
+                        style={[
+                          styles.fullscreenPinchContainer,
+                          {
+                            transform: [
+                              { scale: clampedScale },
+                              { translateX: fullscreenTranslateX[index] },
+                              { translateY: fullscreenTranslateY[index] },
+                            ],
+                          },
+                        ]}
+                      >
+                        <Image
                           source={{ uri: image || 'https://via.placeholder.com/400x400?text=Sin+imagen' }}
-                          style={[
-                            styles.fullscreenImage,
-                            {
-                              transform: [
-                                { scale: scaleValue },
-                                { translateX: translateXValue },
-                                { translateY: translateYValue },
-                              ],
-                            },
-                          ]}
-                          resizeMode="cover"
+                          style={styles.fullscreenImage}
+                          resizeMode="contain"
                         />
-                          </Animated.View>
-                        </PinchGestureHandler>
                       </Animated.View>
-                    </PanGestureHandler>
-                  </Animated.View>
-                </TapGestureHandler>
-              </View>
-            ))}
+                    </PinchGestureHandler>
+                  </PanGestureHandler>
+                </View>
+              );
+            })}
           </ScrollView>
 
           {/* Fullscreen Navigation */}
@@ -679,17 +574,6 @@ const styles = StyleSheet.create({
   imageContainer: {
     width: screenWidth,
     height: '100%',
-  },
-  tapContainer: {
-    flex: 1,
-  },
-  panContainer: {
-    flex: 1,
-  },
-  pinchContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   imageTouchable: {
     flex: 1,
@@ -773,8 +657,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 16,
     backgroundColor: brandColors.surface,
+    overflow: 'visible',
   },
   thumbnail: {
     width: 64,
@@ -865,16 +751,8 @@ const styles = StyleSheet.create({
     width: screenWidth,
     height: screenHeight,
   },
-  fullscreenTapContainer: {
-    flex: 1,
-  },
-  fullscreenPanContainer: {
-    flex: 1,
-  },
   fullscreenPinchContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   fullscreenImage: {
     width: '100%',
@@ -915,4 +793,4 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     transform: [{ scale: 1.3 }],
   },
-}); 
+});
